@@ -1,0 +1,103 @@
+name: Test and publish
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # Builds the image and exercises it the way a user would: start the container, create a family
+  # through the admin API, score a game, and confirm two devices scoring at once merge correctly.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Loaded into the local daemon rather than pushed — this image only has to run here.
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: dadstats:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start container
+        run: |
+          docker run -d --name dadstats-ci -p 3208:3108 \
+            -e ADMIN_PASSWORD=ci-admin-password \
+            -v dadstats-ci-data:/app/data \
+            dadstats:ci
+          # Poll rather than sleep — the first boot applies the schema and generates secrets.
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3208/api/health >/dev/null; then echo "up"; exit 0; fi
+            sleep 1
+          done
+          echo "container failed to become healthy"; docker logs dadstats-ci; exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Playwright
+        run: npm install playwright && npx playwright install --with-deps chromium
+
+      - name: Run end-to-end tests
+        env:
+          APP_URL: http://localhost:3208
+          ADMIN_PASSWORD: ci-admin-password
+        run: |
+          node test/admin-check.js
+          node test/ui-check.js
+          node test/sync-check.js
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs dadstats-ci
+
+  # Multi-arch publish. arm64 matters more than usual here: a lot of self-hosters run this class
+  # of app on a Raspberry Pi or an ARM VPS, and better-sqlite3 is a native module, so the arm64
+  # image genuinely has to be built rather than assumed to work.
+  publish:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Registers binfmt handlers so the arm64 image can be built on an amd64 runner.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Derives the image name from the secret, so nothing here hardcodes an account name.
+      - name: Derive tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/dadstats
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
