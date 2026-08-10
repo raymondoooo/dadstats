@@ -23,7 +23,7 @@ TKTK_DONATE_URL
 
 ```bash
 docker run -d --name dadstats -p 3108:3108 -v dadstats-data:/app/data \
-  ghcr.io/TKTK_IMAGE_NAME
+  raymondoooo/dadstats
 
 docker logs dadstats     # prints your generated admin password
 ```
