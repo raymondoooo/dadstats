@@ -123,4 +123,7 @@ function requireAdmin(req, res, next) {
 module.exports = {
   login, logout, requireAuth, COOKIE_NAME,
   adminLogin, adminLogout, requireAdmin, ADMIN_COOKIE_NAME,
+  // Exported for first-run setup (admin.js), which signs the new family straight in rather than
+  // bouncing them to a login form they'd fill with the password they just chose.
+  issueSession,
 };

@@ -4,6 +4,7 @@
 // only thing that touches a family's games is deleting the family outright.
 const bcrypt = require('bcryptjs');
 const { db } = require('./db');
+const { issueSession: issueFamilySession } = require('./auth');
 
 const BCRYPT_COST = 12;
 const MIN_PASSWORD_LENGTH = 8;
@@ -26,6 +27,51 @@ async function passwordInUse(password, exceptFamilyId) {
     if (await bcrypt.compare(password, row.password_hash)) return true;
   }
   return false;
+}
+
+// --- First-run setup ---
+//
+// The common install is one person, one family, their own box. Making them read the admin
+// password out of `docker logs`, sign into /admin, create an account for themselves, then sign
+// in again somewhere else is four steps more than "open the page and pick a password" — and it's
+// exactly where someone evaluating a self-hosted app gives up.
+//
+// So the first visit to a brand new instance creates the first family directly. This is NOT
+// self-signup returning: it is available only while the instance has no families at all, which
+// makes it a one-time door rather than an open one. Everything after the first account still
+// goes through the admin.
+function setupNeeded() {
+  return db.prepare('select count(*) as n from families').get().n === 0;
+}
+
+function setupStatus(req, res) {
+  res.json({ setupNeeded: setupNeeded() });
+}
+
+async function completeSetup(req, res) {
+  // Re-checked here rather than trusted from the status call: two people hitting a fresh
+  // instance at once must not both get to create "the first" family.
+  if (!setupNeeded()) {
+    // Counted against the rate limiter so an already-configured instance can't be hammered.
+    if (req.recordAuthFailure) req.recordAuthFailure();
+    return res.status(409).json({ error: 'This instance is already set up. Sign in instead.' });
+  }
+
+  const { name, password } = req.body || {};
+  const label = (name || '').trim();
+  if (!label) return res.status(400).json({ error: 'Family name is required.' });
+
+  const invalid = validatePassword(password);
+  if (invalid) return res.status(400).json({ error: invalid });
+
+  const hash = await bcrypt.hash(password, BCRYPT_COST);
+  const { lastInsertRowid } = db
+    .prepare('insert into families (name, password_hash) values (?, ?)')
+    .run(label, hash);
+
+  // No duplicate-password check: there is nothing to collide with on an empty instance.
+  issueFamilySession(res, lastInsertRowid);
+  res.json({ ok: true });
 }
 
 function listFamilies(req, res) {
@@ -99,4 +145,7 @@ function deleteFamily(req, res) {
   res.json({ ok: true });
 }
 
-module.exports = { listFamilies, createFamily, updateFamily, deleteFamily };
+module.exports = {
+  listFamilies, createFamily, updateFamily, deleteFamily,
+  setupNeeded, setupStatus, completeSetup,
+};

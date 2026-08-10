@@ -64,6 +64,25 @@ jobs:
           node test/admin-check.js
           node test/ui-check.js
           node test/sync-check.js
+          node test/sport-check.js
+
+      # First-run setup only exists on an instance with no families, so it needs its own
+      # untouched container rather than the one the tests above have been creating families in.
+      - name: Start a virgin instance for the setup check
+        run: |
+          docker run -d --name dadstats-virgin -p 3209:3108 \
+            -v dadstats-virgin-data:/app/data dadstats:ci
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3209/api/health >/dev/null; then echo "up"; exit 0; fi
+            sleep 1
+          done
+          echo "virgin instance failed to start"; docker logs dadstats-virgin; exit 1
+
+      - name: Run first-run setup check
+        env:
+          APP_URL: http://localhost:3209
+          NODE_PATH: /tmp/pw/node_modules
+        run: node test/setup-check.js
 
       - name: Container logs on failure
         if: failure()

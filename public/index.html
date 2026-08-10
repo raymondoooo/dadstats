@@ -667,6 +667,11 @@
   }
   .login-error { color: var(--miss); font-size: 0.76rem; min-height: 1.2em; margin-bottom: 6px; }
   .login-hint { color: var(--ink-muted); font-size: 0.72rem; margin: -2px 0 12px; }
+  .setup-lede { color: var(--ink-muted); font-size: 0.82rem; margin: -4px 0 14px; }
+  .setup-label {
+    display: block; text-align: left; font-size: 0.66rem; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--ink-muted); margin-bottom: 4px;
+  }
   /* Default browser blue reads as a broken link against this palette. */
   .login-hint a { color: var(--accent); text-decoration: none; font-weight: 600; }
   .login-hint a:hover { text-decoration: underline; }
@@ -688,6 +693,24 @@
       DadStats is free and self-hosted.
       <a href="https://ko-fi.com/raymondoooo" target="_blank" rel="noopener noreferrer">Support my work</a>
     </div>
+  </form>
+
+  <!-- Shown instead of the sign-in form on an instance with no families yet, so the first run is
+       "open the page and pick a password" rather than "read the container logs, then find /admin".
+       The server only honours this while zero families exist (see admin.js setupNeeded). -->
+  <form class="login-card" id="setupForm" hidden>
+    <h1>Dad<span style="color:var(--accent)">Stats</span></h1>
+    <div class="setup-lede">Let's set up your instance. This takes one step.</div>
+    <div class="login-error" id="setupError"></div>
+    <label class="setup-label" for="setupName">Family name</label>
+    <input type="text" id="setupName" placeholder="e.g. The Smiths" required />
+    <label class="setup-label" for="setupPassword">Choose a password</label>
+    <input type="password" id="setupPassword" placeholder="at least 8 characters" autocomplete="new-password" required />
+    <div class="login-hint">
+      Everyone in your family signs in with this one password — that's what lets two people score
+      the same game from two phones.
+    </div>
+    <button type="submit" id="setupSubmit">Create and sign in</button>
   </form>
 </div>
 
@@ -1719,8 +1742,19 @@
 
   function boot() {
     apiGetState().then(function (res) {
-      if (!res.authed) { showLogin(true); return; }
-      finishBoot(res.state);
+      if (res.authed) { finishBoot(res.state); return; }
+      // Not signed in: ask the server whether this instance has any families at all. A brand new
+      // one gets the setup form instead of a password prompt it couldn't possibly satisfy.
+      fetch('/api/setup', { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { setupNeeded: false }; })
+        .then(function (body) {
+          showLogin(true);
+          var needsSetup = !!body.setupNeeded;
+          document.getElementById('loginForm').hidden = needsSetup;
+          document.getElementById('setupForm').hidden = !needsSetup;
+          if (needsSetup) document.getElementById('setupName').focus();
+        });
     });
   }
 
@@ -1736,6 +1770,42 @@
       }
       pwField.value = '';
       apiGetState().then(function (r2) { finishBoot(r2.state); });
+    });
+  });
+
+  document.getElementById('setupForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var nameEl = document.getElementById('setupName');
+    var pwEl = document.getElementById('setupPassword');
+    var errEl = document.getElementById('setupError');
+    var btn = document.getElementById('setupSubmit');
+    errEl.textContent = '';
+
+    // bcrypt hashing takes a beat; without this the button looks dead and invites a second click.
+    btn.disabled = true;
+    btn.textContent = 'Setting up…';
+
+    fetch('/api/setup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: nameEl.value.trim(), password: pwEl.value }),
+      credentials: 'same-origin'
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        return { ok: r.ok, body: body };
+      });
+    }).then(function (res) {
+      if (!res.ok) {
+        errEl.textContent = (res.body && res.body.error) || 'Setup failed';
+        return;
+      }
+      // The server signed us in as part of setup, so go straight into the app.
+      pwEl.value = '';
+      return apiGetState().then(function (r2) { finishBoot(r2.state); });
+    }).catch(function () {
+      errEl.textContent = 'Could not reach the server.';
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = 'Create and sign in';
     });
   });
 

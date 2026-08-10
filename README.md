@@ -28,11 +28,14 @@ stays awake while open).
 docker run -d --name dadstats -p 3108:3108 -v dadstats-data:/app/data \
   raymondoooo/dadstats
 
-docker logs dadstats     # prints your generated admin password
 ```
 
-Open `http://localhost:3108/admin`, sign in, create a family, and give them their password.
-They sign in at `http://localhost:3108`. See [Running it](#running-it) for the full config.
+Open `http://localhost:3108` and pick a family name and password. That's it — you're in.
+
+Adding **more** families later (if you're hosting for other people) is done at
+`/admin`; the admin password is printed to the container logs on first run
+(`docker logs dadstats`) or set with `-e ADMIN_PASSWORD=...`. See
+[Running it](#running-it) for the full config.
 
 ---
 
@@ -255,9 +258,13 @@ Two roles, deliberately small:
 | **Admin** | `ADMIN_PASSWORD`, at `/admin` | Create, rename, re-password and delete families. Never sees game data. |
 | **Family** | the password their admin gave them | Their own kids, seasons and games. Nothing else. |
 
-**You create the accounts.** Sign in at `/admin`, add a family ("The Smiths"), and hand them the
-password — text it, email it, write it on the fridge. There's no sign-up form and no invite
-email to configure, because the whole point is that you already know these people.
+**The first visit sets itself up.** A brand new instance shows a one-step setup form instead of
+a sign-in prompt: pick a family name and password and you're straight into the app. That path
+closes permanently the moment a family exists — it is a one-time door, not self-signup.
+
+**After that, you create the accounts.** Sign in at `/admin`, add a family ("The Smiths"), and
+hand them the password — text it, email it, write it on the fridge. There's no sign-up form and
+no invite email to configure, because the whole point is that you already know these people.
 
 Within a family there are still no usernames — **the password is the whole credential**, and
 that's what makes two parents scoring one game from two phones work: same password, two devices,
@@ -288,15 +295,6 @@ Single container, no external services:
 docker build -t dadstats .
 docker run -d --name dadstats -p 3108:3108 -v dadstats-data:/app/data dadstats
 ```
-
-On first run it prints a generated admin password to the container logs:
-
-```
-docker logs dadstats
-```
-
-Sign in with it at `http://localhost:3108/admin`, create a family, and give that family their
-password. Then they open `http://localhost:3108` and sign in.
 
 Every setting is optional — the command above works as-is.
 

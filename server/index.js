@@ -7,7 +7,10 @@ const {
   login, logout, requireAuth,
   adminLogin, adminLogout, requireAdmin,
 } = require('./auth');
-const { listFamilies, createFamily, updateFamily, deleteFamily } = require('./admin');
+const {
+  listFamilies, createFamily, updateFamily, deleteFamily,
+  setupNeeded, setupStatus, completeSetup,
+} = require('./admin');
 const { loginLimiter } = require('./ratelimit');
 
 // Must happen before any request can hit login/requireAuth, both of which read
@@ -45,6 +48,13 @@ app.get('/api/health', (req, res) => {
 // Express 4 doesn't catch a rejected promise from an async handler — the request would hang
 // until the client gave up rather than returning a 500. Anything async gets wrapped.
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
+// --- First-run setup ---
+// Unauthenticated by necessity — there is no account to authenticate as yet. Safe only because
+// both handlers refuse to do anything once a single family exists (see admin.js setupNeeded).
+// Rate limited anyway: it's an unauthenticated write endpoint on the open internet.
+app.get('/api/setup', setupStatus);
+app.post('/api/setup', loginLimiter('setup'), wrap(completeSetup));
 
 // --- Auth ---
 app.post('/api/login', loginLimiter('family'), wrap(login));
@@ -192,13 +202,15 @@ app.listen(port, () => {
   // printed when it was generated — so it doesn't sit in the logs of every subsequent restart.
   if (admin.generated) {
     console.log('\n' + '='.repeat(64));
-    console.log('  FIRST RUN — admin password generated:\n');
+    console.log('  Admin password (for adding more families later, at /admin):\n');
     console.log(`      ${admin.value}\n`);
-    console.log('  Sign in at /admin to create your families.');
     console.log('  Saved to the data volume; set ADMIN_PASSWORD to choose your own.');
     console.log('='.repeat(64) + '\n');
   }
 
-  const familyCount = db.prepare('select count(*) as n from families').get().n;
-  if (familyCount === 0) console.log('No families yet — visit /admin to create one.');
+  // Nobody should have to read this to get started — the app itself walks a new instance
+  // through creating the first account. The banner is a pointer, not an instruction.
+  if (setupNeeded()) {
+    console.log(`Open http://localhost:${port} to set up your first family.`);
+  }
 });

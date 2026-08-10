@@ -1,6 +1,6 @@
 # Tests
 
-Four end-to-end browser checks. They drive a **running instance** over HTTP — there is no unit
+Five end-to-end browser checks. They drive a **running instance** over HTTP — there is no unit
 test layer, because nearly all the logic lives in one browser-side file.
 
 Each test provisions its own throwaway family through the admin API (`helpers.js`), so runs never
@@ -32,7 +32,18 @@ node test/admin-check.js
 node test/sport-check.js
 ```
 
-All four exit non-zero on failure and drop screenshots in `test/screenshots/`.
+`setup-check.js` is the exception: first-run setup only exists on an instance with **no families
+at all**, so it needs its own untouched container.
+
+```bash
+docker run -d --name dadstats-fresh -p 3209:3108 -v dadstats-fresh-data:/app/data dadstats
+APP_URL=http://localhost:3209 node test/setup-check.js
+
+# to run it again, throw the volume away — it only works once per instance
+docker rm -f dadstats-fresh && docker volume rm dadstats-fresh-data
+```
+
+All five exit non-zero on failure and drop screenshots in `test/screenshots/`.
 
 ## What each one covers
 
@@ -67,3 +78,11 @@ basketball's. That combination is the multi-sport feature: the sport belongs to 
 
 Run it after touching `SPORTS`, `freshSeason`, `sportOfSeason`, or anything that threads `sport`
 through the tracker or averages.
+
+**`setup-check.js`** — on a virgin instance, asserts the setup form replaces the sign-in form,
+rejects a too-short password, signs you straight into the app with no second login, and then
+**closes permanently**: `setupNeeded` goes false and a second POST to `/api/setup` gets a 409.
+That last part is the security property — if setup ever stayed open it would be self-signup,
+which is exactly what the admin model removed.
+
+Run it after touching `server/admin.js` setup handlers, `boot()`, or the login/setup markup.

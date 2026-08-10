@@ -26,6 +26,12 @@ both score the same game. An unrecognised password is **rejected**, never turned
 account. Don't reintroduce self-signup: duplicate passwords would merge two families into one
 account, which is why `admin.js` checks for them at creation.
 
+**First-run setup** (`/api/setup`) is the one exception, and it is load-bearing that it stays an
+exception: it creates the first family without auth so a fresh install isn't a scavenger hunt
+through `docker logs`. It is gated on the instance having **zero** families, re-checked
+server-side on every call. If that gate ever weakens it becomes open self-signup. `setup-check.js`
+asserts it closes.
+
 ## Tests
 `test/` drives a running instance and needs `APP_URL` + `ADMIN_PASSWORD` (see `test/README.md`).
 `sync-check.js` proves the invariant below; `sport-check.js` proves two sports coexist under one
