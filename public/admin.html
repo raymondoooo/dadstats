@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>DadStats — Admin</title>
+<link rel="icon" href="/icon-512.png" />
+<meta name="theme-color" content="#e8590c" />
+<style>
+  :root {
+    --bg: #f3e9d6;
+    --surface: #fffcf5;
+    --ink: #241c12;
+    --ink-muted: #7a6c54;
+    --border: rgba(36, 28, 18, 0.14);
+    --accent: #e8590c;
+    --accent-ink: #fff8f0;
+    --danger: #c92a2a;
+    --ok: #2f9e44;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 64px;
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--ink-muted); font-size: 0.85rem; margin-bottom: 24px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px; margin-bottom: 16px;
+  }
+  label { display: block; font-size: 0.78rem; text-transform: uppercase;
+          letter-spacing: 0.04em; color: var(--ink-muted); margin-bottom: 5px; }
+  input {
+    width: 100%; padding: 11px 12px; font-size: 1rem; font-family: inherit;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: #fff; color: var(--ink); margin-bottom: 12px;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    border: none; border-radius: 10px; padding: 11px 16px;
+    background: var(--accent); color: var(--accent-ink);
+  }
+  button:active { transform: scale(0.99); }
+  button.ghost { background: transparent; color: var(--ink-muted); border: 1px solid var(--border); }
+  button.danger { background: transparent; color: var(--danger); border: 1px solid rgba(201,42,42,0.3); }
+  button.small { padding: 7px 11px; font-size: 0.82rem; }
+  .row {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 13px 0; border-bottom: 1px solid var(--border);
+  }
+  .row:last-child { border-bottom: none; }
+  .row-name { font-weight: 600; flex: 1 1 140px; }
+  .row-meta { color: var(--ink-muted); font-size: 0.78rem; }
+  .msg { padding: 11px 13px; border-radius: 10px; margin-bottom: 14px; font-size: 0.9rem; display: none; }
+  .msg.err { display: block; background: rgba(201,42,42,0.1); color: var(--danger); }
+  .msg.ok { display: block; background: rgba(47,158,68,0.1); color: var(--ok); }
+  .empty { color: var(--ink-muted); font-size: 0.9rem; padding: 8px 0; }
+  .hint { color: var(--ink-muted); font-size: 0.78rem; margin-top: -4px; margin-bottom: 14px; }
+  .hidden { display: none !important; }
+  .chip { font-size: 0.7rem; padding: 2px 8px; border-radius: 999px;
+          background: rgba(36,28,18,0.07); color: var(--ink-muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Dad<span>Stats</span> Admin</h1>
+  <div class="sub">Create a family, then give that family their password.</div>
+
+  <div class="msg" id="msg"></div>
+
+  <!-- Sign in -->
+  <div class="card" id="loginCard">
+    <form id="loginForm">
+      <label for="adminPassword">Admin password</label>
+      <input type="password" id="adminPassword" autocomplete="current-password" required />
+      <div class="hint">Printed in the container logs on first run, unless you set ADMIN_PASSWORD.</div>
+      <button type="submit">Sign in</button>
+    </form>
+  </div>
+
+  <!-- Family management -->
+  <div id="panel" class="hidden">
+    <div class="card">
+      <form id="createForm">
+        <label for="newName">New family name</label>
+        <input type="text" id="newName" placeholder="e.g. The Smiths" required />
+        <label for="newPassword">Their password</label>
+        <input type="text" id="newPassword" placeholder="at least 8 characters" required />
+        <div class="hint">Shown in plain text on purpose — you need to read it back to pass it on.</div>
+        <button type="submit">Create family</button>
+        <button type="button" class="ghost" id="suggestBtn">Suggest one</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <div id="familyList"><div class="empty">Loading…</div></div>
+    </div>
+
+    <button class="ghost small" id="logoutBtn">Sign out of admin</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  var msgEl = document.getElementById('msg');
+  var panel = document.getElementById('panel');
+  var loginCard = document.getElementById('loginCard');
+  var listEl = document.getElementById('familyList');
+
+  function show(text, kind) {
+    msgEl.textContent = text;
+    msgEl.className = 'msg ' + (kind || 'ok');
+    if (kind !== 'err') setTimeout(function () { msgEl.className = 'msg'; }, 4000);
+  }
+  function api(method, url, body) {
+    return fetch(url, {
+      method: method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: 'same-origin'
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (b) {
+        return { ok: r.ok, status: r.status, body: b };
+      });
+    });
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  // Avoids ambiguous characters — this gets read aloud, written down, and typed on a phone.
+  function suggestPassword() {
+    var alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+    var bytes = new Uint32Array(5);
+    crypto.getRandomValues(bytes);
+    var words = [];
+    for (var w = 0; w < 3; w++) {
+      var word = '';
+      var r = new Uint32Array(4);
+      crypto.getRandomValues(r);
+      for (var i = 0; i < 4; i++) word += alphabet[r[i] % alphabet.length];
+      words.push(word);
+    }
+    return words.join('-');
+  }
+
+  function renderFamilies(families) {
+    if (!families.length) {
+      listEl.innerHTML = '<div class="empty">No families yet. Create the first one above.</div>';
+      return;
+    }
+    listEl.innerHTML = families.map(function (f) {
+      return '<div class="row">' +
+        '<span class="row-name">' + esc(f.name || '(unnamed)') + '</span>' +
+        (f.has_data ? '<span class="chip">has games</span>' : '<span class="chip">empty</span>') +
+        '<span class="row-meta">' + esc((f.created_at || '').split(' ')[0]) + '</span>' +
+        '<button class="ghost small" data-rename="' + f.id + '">Rename</button>' +
+        '<button class="ghost small" data-pw="' + f.id + '">New password</button>' +
+        '<button class="danger small" data-del="' + f.id + '" data-name="' + esc(f.name) + '">Delete</button>' +
+      '</div>';
+    }).join('');
+
+    listEl.querySelectorAll('[data-rename]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var name = prompt('New name for this family:');
+        if (!name || !name.trim()) return;
+        api('PATCH', '/api/admin/families/' + el.dataset.rename, { name: name.trim() })
+          .then(function (r) {
+            if (!r.ok) return show(r.body.error || 'Rename failed', 'err');
+            show('Renamed.'); load();
+          });
+      });
+    });
+    listEl.querySelectorAll('[data-pw]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var pw = prompt('New password for this family (at least 8 characters):', suggestPassword());
+        if (!pw) return;
+        api('PATCH', '/api/admin/families/' + el.dataset.pw, { password: pw })
+          .then(function (r) {
+            if (!r.ok) return show(r.body.error || 'Could not change password', 'err');
+            show('Password changed. Give them: ' + pw);
+          });
+      });
+    });
+    listEl.querySelectorAll('[data-del]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var name = el.dataset.name || 'this family';
+        if (!confirm('Delete ' + name + '?\n\nThis permanently deletes every season and game they have recorded. This cannot be undone.')) return;
+        api('DELETE', '/api/admin/families/' + el.dataset.del).then(function (r) {
+          if (!r.ok) return show(r.body.error || 'Delete failed', 'err');
+          show('Deleted.'); load();
+        });
+      });
+    });
+  }
+
+  function load() {
+    return api('GET', '/api/admin/families').then(function (r) {
+      if (!r.ok) { showLogin(); return; }
+      loginCard.classList.add('hidden');
+      panel.classList.remove('hidden');
+      renderFamilies(r.body.families || []);
+    });
+  }
+  function showLogin() {
+    panel.classList.add('hidden');
+    loginCard.classList.remove('hidden');
+  }
+
+  document.getElementById('loginForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var field = document.getElementById('adminPassword');
+    api('POST', '/api/admin/login', { password: field.value }).then(function (r) {
+      if (!r.ok) return show(r.body.error || 'Sign in failed', 'err');
+      field.value = '';
+      msgEl.className = 'msg';
+      load();
+    });
+  });
+
+  document.getElementById('suggestBtn').addEventListener('click', function () {
+    document.getElementById('newPassword').value = suggestPassword();
+  });
+
+  document.getElementById('createForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var nameEl = document.getElementById('newName');
+    var pwEl = document.getElementById('newPassword');
+    var submitEl = ev.target.querySelector('button[type=submit]');
+    var name = nameEl.value.trim();
+    var password = pwEl.value;
+
+    // Creating a family bcrypt-compares the new password against every existing family to rule
+    // out a duplicate (see admin.js passwordInUse), which is ~300ms each — well over a second
+    // once there are a few families. Without this the button just looks dead, and an impatient
+    // second click would fire a second create.
+    submitEl.disabled = true;
+    var originalLabel = submitEl.textContent;
+    submitEl.textContent = 'Creating…';
+
+    api('POST', '/api/admin/families', { name: name, password: password })
+      .then(function (r) {
+        if (!r.ok) return show(r.body.error || 'Could not create family', 'err');
+        show('Created ' + name + '. Give them this password: ' + password);
+        nameEl.value = ''; pwEl.value = '';
+        return load();
+      })
+      .finally(function () {
+        submitEl.disabled = false;
+        submitEl.textContent = originalLabel;
+      });
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', function () {
+    api('POST', '/api/admin/logout').then(showLogin);
+  });
+
+  // Resume an existing admin session if the cookie is still good.
+  api('GET', '/api/admin/session').then(function (r) {
+    if (r.ok) load(); else showLogin();
+  });
+})();
+</script>
+</body>
+</html>

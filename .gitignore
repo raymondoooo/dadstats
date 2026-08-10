@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+secrets/
+node_modules/
+dist/
+dist-electron/
+dist-renderer/
+win-unpacked/
+*.log
+backups/
+backups-encrypted/
+data/
+test/screenshots/

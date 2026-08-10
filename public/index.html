@@ -1,0 +1,2325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>DadStats</title>
+
+<!-- PWA / "Add to Home Screen" support -->
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="icon" href="/icon-512.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="DadStats" />
+<meta name="theme-color" content="#e8590c" />
+
+<style>
+  :root {
+    --bg: #f3e9d6;
+    --bg-plank: #ecdec3;
+    --surface: #fffcf5;
+    --surface-raised: #ffffff;
+    --ink: #241c12;
+    --ink-muted: #7a6c54;
+    --border: rgba(36, 28, 18, 0.14);
+    --accent: #e8590c;
+    --accent-ink: #fff8f0;
+    --neutral-chip: #5b6472;
+    --make: #2f9e44;
+    --make-bg: rgba(47, 158, 68, 0.12);
+    --miss: #c92a2a;
+    --miss-bg: rgba(201, 42, 42, 0.1);
+    --shadow: 0 1px 2px rgba(36, 28, 18, 0.06), 0 6px 16px rgba(36, 28, 18, 0.07);
+    --scrim: rgba(36, 28, 18, 0.5);
+  }
+
+  /* Every number in this app is a stat, so they all get the same tabular scoreboard
+     treatment — no webfont (offline-first PWA; a CDN link would silently fall back). */
+  :root {
+    --font-num: ui-monospace, "SF Mono", SFMono-Regular, "Roboto Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161e;
+      --bg-plank: #171c26;
+      --surface: #1c212b;
+      --surface-raised: #232936;
+      --ink: #f1ead9;
+      --ink-muted: #97a0b2;
+      --border: rgba(241, 234, 217, 0.12);
+      --accent: #ff8a3d;
+      --accent-ink: #1a1103;
+      --neutral-chip: #8b95a8;
+      --make: #52d668;
+      --make-bg: rgba(82, 214, 104, 0.14);
+      --miss: #ff6b6b;
+      --miss-bg: rgba(255, 107, 107, 0.12);
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.35);
+      --scrim: rgba(0, 0, 0, 0.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12161e;
+    --bg-plank: #171c26;
+    --surface: #1c212b;
+    --surface-raised: #232936;
+    --ink: #f1ead9;
+    --ink-muted: #97a0b2;
+    --border: rgba(241, 234, 217, 0.12);
+    --accent: #ff8a3d;
+    --accent-ink: #1a1103;
+    --neutral-chip: #8b95a8;
+    --make: #52d668;
+    --make-bg: rgba(82, 214, 104, 0.14);
+    --miss: #ff6b6b;
+    --miss-bg: rgba(255, 107, 107, 0.12);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.35);
+    --scrim: rgba(0, 0, 0, 0.6);
+  }
+  :root[data-theme="light"] {
+    --bg: #f3e9d6;
+    --bg-plank: #ecdec3;
+    --surface: #fffcf5;
+    --surface-raised: #ffffff;
+    --ink: #241c12;
+    --ink-muted: #7a6c54;
+    --border: rgba(36, 28, 18, 0.14);
+    --accent: #e8590c;
+    --accent-ink: #fff8f0;
+    --neutral-chip: #5b6472;
+    --make: #2f9e44;
+    --make-bg: rgba(47, 158, 68, 0.12);
+    --miss: #c92a2a;
+    --miss-bg: rgba(201, 42, 42, 0.1);
+    --shadow: 0 1px 2px rgba(36, 28, 18, 0.06), 0 6px 16px rgba(36, 28, 18, 0.07);
+    --scrim: rgba(36, 28, 18, 0.5);
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  /* Keyboard users got no visible focus anywhere before this. :focus-visible keeps it off
+     mouse/touch taps, so it costs the touch UI nothing. */
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    color: var(--ink);
+    background:
+      repeating-linear-gradient(90deg, var(--bg-plank) 0 64px, var(--bg) 64px 128px),
+      var(--bg);
+    min-height: 100vh;
+    padding: env(safe-area-inset-top, 14px) 14px calc(env(safe-area-inset-bottom, 14px) + 14px);
+  }
+
+  .wrap { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 4px 2px 2px;
+  }
+  h1 {
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    margin: 0;
+    text-transform: uppercase;
+  }
+  h1 span { color: var(--accent); }
+  .subtitle { font-size: 0.72rem; color: var(--ink-muted); margin-top: 2px; }
+
+  .screen { display: none; flex-direction: column; gap: 14px; }
+  .screen.active { display: flex; }
+
+  .back-btn {
+    border: none;
+    background: transparent;
+    color: var(--ink-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    padding: 11px 4px;
+    margin: -11px 0 -11px -4px; /* full-height hit area without adding visible space */
+    align-self: flex-start;
+  }
+  .back-btn:hover { color: var(--accent); }
+
+  h2.screen-title { margin: 0; font-size: 1.15rem; font-weight: 800; }
+  h2.screen-title .record-chip { margin-left: 10px; font-size: 0.82rem; }
+
+  .add-tile {
+    border: 1px dashed var(--border);
+    background: transparent;
+    color: var(--ink-muted);
+    font-weight: 700;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 14px;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+  .add-tile:hover { border-color: var(--accent); color: var(--accent); }
+
+  .schedule-btn {
+    width: 100%;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 0.84rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 14px;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+  .schedule-btn:active { transform: scale(0.98); }
+
+  .profile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+  .profile-tile {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 22px 14px 16px;
+    min-height: 108px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    text-align: center;
+    cursor: pointer;
+  }
+  .profile-tile:active { transform: scale(0.97); }
+  .profile-tile .name { font-weight: 800; font-size: 1rem; }
+  .profile-tile .meta { font-size: 0.66rem; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .tile-actions { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; }
+
+  .icon-btn {
+    border: none;
+    background: transparent;
+    color: var(--ink-muted);
+    font-size: 0.95rem;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .icon-btn:hover { background: var(--make-bg); }
+  .icon-btn.danger:hover { background: var(--miss-bg); color: var(--miss); }
+  /* 28px is well under the 44px touch minimum. Grow the hit area with a pseudo-element instead
+     of the box, so list rows and tiles keep their current height. */
+  .icon-btn { position: relative; }
+  .icon-btn::after { content: ''; position: absolute; inset: -8px; }
+
+  .record-chip {
+    font-family: var(--font-num);
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--ink-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .record-chip b { color: var(--make); font-weight: 700; }
+  .record-chip i { color: var(--miss); font-style: normal; font-weight: 700; }
+
+  .list-row {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 8px 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    background: var(--surface);
+  }
+  .list-row:active { transform: scale(0.99); }
+  .row-name { font-weight: 700; font-size: 0.86rem; flex: 1; }
+  .row-meta { font-size: 0.68rem; color: var(--ink-muted); white-space: nowrap; }
+  .row-score { font-size: 0.76rem; font-weight: 700; color: var(--ink); white-space: nowrap; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+  .avg-name { font-family: -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif; }
+  .row-actions { display: flex; gap: 2px; }
+  .list-empty { font-size: 0.74rem; color: var(--ink-muted); }
+
+  .status-chip {
+    font-size: 0.6rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 3px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .status-chip.win { background: var(--make-bg); color: var(--make); }
+  .status-chip.loss { background: var(--miss-bg); color: var(--miss); }
+  .status-chip.neutral { background: var(--border); color: var(--ink-muted); }
+  .status-chip.scheduled { background: var(--border); color: var(--ink-muted); }
+  .status-chip.progress { background: rgba(232, 89, 12, 0.14); color: var(--accent); }
+  @media (prefers-color-scheme: dark) {
+    .status-chip.progress { background: rgba(255, 138, 61, 0.16); }
+  }
+
+  .season-list, .game-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .avg-heading {
+    font-size: 0.72rem;
+    margin: 0 0 8px;
+    color: var(--ink-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+  }
+  .avg-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+  .avg-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+  /* The player column stays put while the 11 stat columns scroll sideways under it. */
+  .avg-table th:first-child, .avg-table td:first-child {
+    position: sticky; left: 0; background: var(--surface);
+    box-shadow: 1px 0 0 var(--border);
+  }
+  .avg-table th, .avg-table td { padding: 8px 10px; text-align: right; white-space: nowrap; }
+  .avg-table th:first-child, .avg-table td:first-child { text-align: left; }
+  .avg-table thead th {
+    color: var(--ink-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.62rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .avg-table tbody tr:not(:last-child) td { border-bottom: 1px solid var(--border); }
+  .avg-name { font-weight: 700; color: var(--ink); }
+
+  .shot-btn.sub-off { background: var(--make-bg); color: var(--make); }
+  .shot-btn.sub-on { background: var(--miss-bg); color: var(--miss); position: relative; }
+  .shot-btn.sub-on::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--miss);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .shot-btn.sub-on::after { animation: pulse-dot 1.2s infinite; }
+  }
+  @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  /* Setup fields (name, date, result) scroll away; only the scoreboard + clock stay pinned,
+     because those are the two things you need while scrolling a long roster mid-game. */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .toolbar-input {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 0.78rem;
+    font-family: inherit;
+    padding: 9px 10px;
+    border-radius: 8px;
+    flex: 1 1 160px;
+    min-width: 140px;
+  }
+  .toolbar-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .toolbar-date { flex: 0 1 200px; min-width: 180px; color-scheme: light dark; }
+
+  .gamebar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+  }
+  .scoreboard { display: flex; align-items: flex-end; gap: 8px; }
+  .sb-side { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .sb-label {
+    font-size: 0.55rem; font-weight: 800; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--ink-muted);
+  }
+  .sb-dash { color: var(--ink-muted); font-weight: 700; padding-bottom: 10px; }
+  .score-input {
+    width: 54px; box-sizing: border-box; text-align: center;
+    padding: 7px 4px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface-raised); color: var(--ink);
+    font-family: var(--font-num); font-size: 1.05rem; font-weight: 700;
+    -moz-appearance: textfield;
+  }
+  .score-input::-webkit-outer-spin-button, .score-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .score-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .toolbar-btn {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--ink-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 14px 13px; /* lands the control at ~44px, the minimum comfortable touch target */
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .toolbar-btn:active { transform: scale(0.96); }
+
+  /* Win/Loss read as one either/or control rather than two loose buttons. */
+  .result-toggle { display: flex; }
+  .result-toggle .result-btn { border-radius: 0; margin-left: -1px; }
+  .result-toggle .result-btn:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+  .result-toggle .result-btn:last-child { border-radius: 0 8px 8px 0; }
+  .toolbar-btn.result-btn.win { border-color: var(--make); color: var(--make); }
+  .toolbar-btn.result-btn.win.active { background: var(--make); color: #fff; z-index: 1; }
+  .toolbar-btn.result-btn.loss { border-color: var(--miss); color: var(--miss); }
+  .toolbar-btn.result-btn.loss.active { background: var(--miss); color: #fff; z-index: 1; }
+
+  .clock-btn { display: flex; align-items: center; gap: 6px; }
+  .clock-btn::before {
+    content: ''; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--make); flex-shrink: 0;
+  }
+  .toolbar-btn.clock-btn.paused { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .toolbar-btn.clock-btn.paused::before { background: var(--accent-ink); }
+
+  /* Setup/teardown actions live below the roster, away from the live tap zone — Reset Stats
+     sitting next to Add Player in the old toolbar was a mis-tap waiting to happen. */
+  .tracker-footer {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding-top: 4px; border-top: 1px solid var(--border);
+  }
+  .danger-btn {
+    border: 1px solid transparent; background: none; color: var(--ink-muted);
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+    padding: 13px 12px; border-radius: 8px; cursor: pointer;
+  }
+  .danger-btn:hover { color: var(--miss); border-color: var(--miss); }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+    align-items: start; /* a collapsed bench strip shouldn't stretch to a tall card's height */
+  }
+
+  .remove-btn {
+    border: none;
+    background: transparent;
+    color: var(--ink-muted);
+    font-size: 1.1rem;
+    line-height: 1;
+    width: 40px;
+    height: 40px;
+    margin: -7px -7px -7px 0; /* keeps the 40px hit area from pushing the header taller */
+    border-radius: 50%;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .remove-btn:hover { background: var(--miss-bg); color: var(--miss); }
+  .remove-btn:active { transform: scale(0.9); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 13px;
+    border-top: 4px solid var(--tone-color, var(--neutral-chip));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  /* Accent already means "live" elsewhere (the In Progress chip), so it reads as on-the-floor
+     here too. A ring rather than a border swap, so nothing reflows when a player subs in. */
+  .card.on-court { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+  .on-pill {
+    font-size: 0.54rem; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--accent); border: 1px solid var(--accent); border-radius: 999px;
+    padding: 2px 6px; white-space: nowrap; align-self: center;
+  }
+
+  /* Bench players collapse to a strip while anyone is on the floor: a full card each turned
+     3 players into 2+ screens of scrolling, and you only log stats for who's actually playing. */
+  .bench-strip {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--tone-color, var(--neutral-chip));
+    border-radius: 12px;
+    padding: 8px 8px 8px 12px;
+  }
+  .bench-main {
+    display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0;
+    background: none; border: none; padding: 11px 0; cursor: pointer; text-align: left;
+    font-family: inherit; color: var(--ink);
+  }
+  .bench-name {
+    font-weight: 700; font-size: 0.86rem;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .bench-stat { font-family: var(--font-num); font-size: 0.78rem; color: var(--ink-muted); white-space: nowrap; }
+  .bench-stat b { color: var(--ink); font-weight: 700; }
+  .bench-sub {
+    border: none; border-radius: 9px; cursor: pointer; font-family: inherit;
+    background: var(--make-bg); color: var(--make);
+    font-size: 0.62rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 14px 13px; white-space: nowrap; flex-shrink: 0;
+  }
+  .bench-sub:active { transform: scale(0.95); }
+
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .name-input {
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--ink);
+    background: transparent;
+    border: none;
+    border-bottom: 1px dashed transparent;
+    padding: 2px 0;
+    width: 100%;
+    font-family: inherit;
+  }
+  .name-input:focus { outline: none; border-bottom-color: var(--tone-color, var(--neutral-chip)); }
+
+  .score-block { text-align: right; flex-shrink: 0; }
+  .score {
+    font-size: 2.3rem;
+    font-weight: 800;
+    line-height: 1;
+    font-family: var(--font-num);
+    font-variant-numeric: tabular-nums;
+    color: var(--tone-color, var(--ink));
+  }
+  .score-label {
+    font-size: 0.62rem;
+    color: var(--ink-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .stat-row { display: flex; flex-wrap: wrap; row-gap: 2px; gap: 8px; font-size: 0.72rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .stat-row b { color: var(--ink); font-weight: 700; }
+  .stat-row .sep { opacity: 0.4; }
+
+  .shot-groups { display: flex; flex-direction: column; gap: 6px; }
+  .extra-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  .shot-group {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px;
+    align-items: stretch;
+  }
+  .shot-tag {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: var(--ink-muted);
+    min-width: 34px;
+    padding: 0 4px;
+  }
+  .shot-btn {
+    border: none;
+    border-radius: 10px;
+    padding: 9px 4px;
+    min-height: 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: transform 0.06s ease;
+  }
+  .shot-btn:active { transform: scale(0.95); }
+  .shot-btn .n { font-size: 1.1rem; font-weight: 800; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+  .shot-btn .l { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+  .shot-btn.make { background: var(--make-bg); color: var(--make); }
+  .shot-btn.miss { background: var(--miss-bg); color: var(--miss); }
+
+  .card-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .undo-btn {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--ink-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 14px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .undo-btn:disabled { opacity: 0.35; cursor: default; }
+  .undo-btn:not(:disabled):active { transform: scale(0.96); }
+
+  .log-toggle {
+    font-size: 0.66rem;
+    color: var(--ink-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    padding: 14px 6px;
+  }
+
+  .log {
+    display: none;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-height: 88px;
+    overflow-y: auto;
+    padding-top: 2px;
+    border-top: 1px solid var(--border);
+    margin-top: 2px;
+  }
+  .log.open { display: flex; }
+  .log-chip {
+    font-size: 0.62rem;
+    font-weight: 700;
+    padding: 3px 6px;
+    border-radius: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .log-chip.make { background: var(--make-bg); color: var(--make); }
+  .log-chip.miss { background: var(--miss-bg); color: var(--miss); }
+  .log-empty { font-size: 0.66rem; color: var(--ink-muted); padding: 4px 0; }
+
+  footer { text-align: center; font-size: 0.64rem; color: var(--ink-muted); padding: 6px 0 2px; }
+
+  .login-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg); padding: 24px;
+  }
+  .login-card {
+    width: 100%; max-width: 320px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; box-shadow: var(--shadow);
+    padding: 28px 24px; text-align: center;
+  }
+  .login-card h1 { font-size: 1.1rem; margin: 0 0 18px; }
+  .login-card input {
+    width: 100%; box-sizing: border-box; padding: 12px 14px;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--surface-raised); color: var(--ink);
+    font-size: 0.95rem; margin-bottom: 10px;
+  }
+  .login-card button {
+    width: 100%; padding: 12px; border: none; border-radius: 10px;
+    background: var(--accent); color: var(--accent-ink);
+    font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em;
+    font-size: 0.84rem; cursor: pointer;
+  }
+  .login-error { color: var(--miss); font-size: 0.76rem; min-height: 1.2em; margin-bottom: 6px; }
+  .login-hint { color: var(--ink-muted); font-size: 0.72rem; margin: -2px 0 12px; }
+</style>
+</head>
+<body>
+
+<div class="login-overlay" id="loginView">
+  <form class="login-card" id="loginForm">
+    <h1>Dad<span style="color:var(--accent)">Stats</span></h1>
+    <div class="login-error" id="loginError"></div>
+    <input type="password" id="loginPassword" placeholder="Family password" autocomplete="current-password" required />
+    <div class="login-hint">Use the password whoever runs this server gave your family.</div>
+    <button type="submit">Sign In</button>
+    <!-- TKTK_DONATE_URL is a placeholder token: search-and-replace it repo-wide once the real
+         donation link exists. Chosen to be greppable and impossible to hit by accident. -->
+    <div class="login-hint" style="margin-top:14px">
+      DadStats is free and self-hosted.
+      <a href="TKTK_DONATE_URL" target="_blank" rel="noopener noreferrer">Support it</a>
+    </div>
+  </form>
+</div>
+
+<div class="wrap" id="appRoot" style="display:none">
+  <header>
+    <div>
+      <h1>Dad<span>Stats</span></h1>
+      <div class="subtitle" id="gameDate"></div>
+    </div>
+  </header>
+
+  <div class="screen" id="homeView">
+    <h2 class="screen-title">Kids &amp; Teams</h2>
+    <div class="profile-grid" id="profileGrid"></div>
+    <button class="add-tile" id="addProfileBtn">+ Add Kid/Team</button>
+  </div>
+
+  <div class="screen" id="profileView">
+    <button class="back-btn" id="profileBackBtn">&larr; Kids &amp; Teams</button>
+    <h2 class="screen-title" id="profileTitle"></h2>
+    <div class="season-list" id="seasonList"></div>
+    <button class="add-tile" id="addSeasonBtn">+ Add Season</button>
+  </div>
+
+  <div class="screen" id="seasonView">
+    <button class="back-btn" id="seasonBackBtn">&larr; <span id="seasonBackLabel"></span></button>
+    <h2 class="screen-title" id="seasonTitle"></h2>
+    <button class="schedule-btn" id="scheduleGameBtn">+ Schedule Game</button>
+    <div id="seasonAverages"></div>
+    <div class="game-list" id="gameList"></div>
+  </div>
+
+  <div class="screen" id="trackerView">
+    <button class="back-btn" id="trackerBackBtn">&larr; <span id="trackerBackLabel"></span></button>
+    <div class="toolbar">
+      <input class="toolbar-input" id="gameNameInput" placeholder="Name this game (e.g. vs Eagles)" aria-label="Game name" />
+      <input class="toolbar-input toolbar-date" type="datetime-local" id="gameDateInput" aria-label="Game date and time" />
+      <div class="result-toggle">
+        <button class="toolbar-btn result-btn win" id="markWinBtn">Win</button>
+        <button class="toolbar-btn result-btn loss" id="markLossBtn">Loss</button>
+      </div>
+    </div>
+
+    <div class="gamebar">
+      <div class="scoreboard">
+        <div class="sb-side">
+          <span class="sb-label">Us</span>
+          <input type="number" inputmode="numeric" min="0" class="score-input" id="teamScoreInput" aria-label="Team score" />
+        </div>
+        <span class="sb-dash">&ndash;</span>
+        <div class="sb-side">
+          <span class="sb-label">Opp</span>
+          <input type="number" inputmode="numeric" min="0" class="score-input" id="oppScoreInput" aria-label="Opponent score" />
+        </div>
+      </div>
+      <button class="toolbar-btn clock-btn" id="clockToggleBtn">Clock Out</button>
+    </div>
+
+    <div class="cards" id="cards"></div>
+
+    <div class="tracker-footer">
+      <button class="toolbar-btn" id="addPlayerBtn">+ Add Player</button>
+      <button class="danger-btn" id="resetStatsBtn">Reset Stats</button>
+    </div>
+  </div>
+
+  <footer>Taps save automatically &middot; safe to close and reopen mid-game</footer>
+</div>
+
+<script>
+(function () {
+  var STORAGE_KEY = 'dadstats_v5';
+  var LEGACY_V4_KEY = 'dadstats_v4';
+  var LEGACY_V3_KEY = 'dadstats_v3';
+  var LEGACY_V2_KEY = 'dadstats_v2';
+  var LEGACY_V1_KEY = 'dadstats_v1';
+  var SCREENS = ['home', 'profile', 'season', 'tracker'];
+
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  // Correction applied to this device's own clock so timestamps stay comparable across devices —
+  // two phones can easily disagree by tens of seconds. Set from the server's own clock on every
+  // successful sync (see apiGetState/boot/resyncWithServer below). now()/nowIso() should be used
+  // instead of Date.now()/new Date().toISOString() anywhere a timestamp might be compared against
+  // one written by a different device: sub-in/out times, stat log ordering, and metaUpdatedAt/
+  // updatedAt (which decide which device's edit wins a merge — a fast clock shouldn't get to make
+  // its edits always look newest). Plain Date.now() is still fine for things only ever compared to
+  // themselves, like uid()'s entropy, or that are purely informational, like a game's createdAt.
+  var clockOffset = 0;
+  function now() {
+    return Date.now() + clockOffset;
+  }
+  function nowIso() {
+    return new Date(now()).toISOString();
+  }
+
+  // Sentinel for legacy players/log entries that predate metaUpdatedAt/id tracking — always
+  // sorts as "oldest", so the first real edit after migration naturally takes precedence.
+  var LEGACY_META_TS = '1970-01-01T00:00:00.000Z';
+
+  // The stat schema for a sport: which tap-to-count buttons exist (tallyStats) and which
+  // make/miss pairs exist and how many points each make is worth (shotTypes). Every place that
+  // used to hardcode basketball's fields (emptyPlayer, recomputeFromLog, points, season
+  // averages, the tracker card) now derives them from here instead, so a second sport is "add a
+  // SPORTS entry" rather than another pass through those functions. Only basketball is wired up
+  // today — profiles carry a `sport` field for forward compatibility, but nothing sets it to
+  // anything else yet, and there's no picker UI.
+  var SPORTS = {
+    basketball: {
+      label: 'Basketball',
+      tallyStats: [
+        { key: 'reb', label: 'R', tone: 'make' },
+        { key: 'ast', label: 'A', tone: 'make' },
+        { key: 'stl', label: 'S', tone: 'make' },
+        { key: 'blk', label: 'B', tone: 'make' },
+        { key: 'to', label: 'TO', tone: 'miss' }
+      ],
+      shotTypes: [
+        { madeKey: 'made2', missKey: 'miss2', label: '2PT', value: 2 },
+        { madeKey: 'made3', missKey: 'miss3', label: '3PT', value: 3 },
+        { madeKey: 'made1', missKey: 'miss1', label: 'FT', value: 1 }
+      ]
+    }
+  };
+  var DEFAULT_SPORT = 'basketball';
+  function sportConfig(sport) {
+    return SPORTS[sport] || SPORTS[DEFAULT_SPORT];
+  }
+  // Every counting field on a player card: tally stats plus each shot type's made/miss keys.
+  function statFieldKeys(sport) {
+    var cfg = sportConfig(sport);
+    var keys = cfg.tallyStats.map(function (s) { return s.key; });
+    cfg.shotTypes.forEach(function (s) { keys.push(s.madeKey, s.missKey); });
+    return keys;
+  }
+
+  function emptyPlayer(name, tone) {
+    var p = {
+      id: uid(), name: name, tone: tone,
+      onCourt: false, subInAt: null, timeMs: 0,
+      metaUpdatedAt: nowIso(),
+      removed: false,
+      log: [], logOpen: false
+    };
+    statFieldKeys(DEFAULT_SPORT).forEach(function (k) { p[k] = 0; });
+    return p;
+  }
+
+  // gameId/idx are only used to backfill a *deterministic* id for legacy players/log entries
+  // that predate this field (position-derived, so two devices migrating the same old JSON
+  // independently land on the same id instead of minting different random ones and creating
+  // permanent duplicates the next time they sync).
+  function withDefaults(p, gameId, idx) {
+    var merged = Object.assign(emptyPlayer(p.name, p.tone), p);
+    if (!p.id) merged.id = 'legacy-p-' + gameId + '-' + idx;
+    if (!p.metaUpdatedAt) merged.metaUpdatedAt = LEGACY_META_TS;
+    merged.removed = p.removed || false;
+    merged.log = (merged.log || []).map(function (e, i) {
+      return {
+        id: e.id || ('legacy-l-' + merged.id + '-' + i),
+        ts: e.ts != null ? e.ts : i,
+        key: e.key, result: e.result, label: e.label,
+        removed: e.removed || false
+      };
+    });
+    return merged;
+  }
+
+  function activeLogEntries(p) {
+    return (p.log || []).filter(function (e) { return !e.removed; });
+  }
+
+  // Removing a player tombstones them (see handleRemove) rather than splicing them out, for the
+  // same reason Undo tombstones a log entry: mergePlayers unions the two devices' rosters by id
+  // and can't tell "this player never existed here" from "this player was deleted here", so a
+  // spliced-out player was simply resurrected by the next resync from the other device. Everything
+  // user-facing goes through activePlayers(); p.removed players stay in the array purely as
+  // tombstones so the deletion itself can propagate.
+  function activePlayers(g) {
+    return ((g && g.players) || []).filter(function (p) { return !p.removed; });
+  }
+
+  // Case-insensitive, whitespace-trimmed match, scoped to one game's roster — blank names don't
+  // count as a conflict with each other (a coach may add a few players before naming them).
+  // Compares against array indices (not filtered positions), so callers can pass a raw index.
+  function hasDuplicateName(players, idx, name) {
+    var trimmed = (name || '').trim().toLowerCase();
+    if (!trimmed) return false;
+    return players.some(function (other, i) {
+      return i !== idx && !other.removed && (other.name || '').trim().toLowerCase() === trimmed;
+    });
+  }
+
+  // A player's identity across games is their name — there is no season-level roster object, every
+  // game holds its own independent cards. So renaming a kid in one game left every other game (and
+  // therefore the season averages) still showing the old name. This collects the same kid's cards
+  // in the rest of the season so a rename can be offered as a season-wide change. The caller
+  // confirms first rather than applying silently: two different unnamed kids can legitimately share
+  // a placeholder name like "Player 2", and rewriting a finalized game's history is not something
+  // to do behind the user's back.
+  function renameTargetsInSeason(season, currentGameId, oldName, newName) {
+    var from = (oldName || '').trim().toLowerCase();
+    var to = (newName || '').trim();
+    if (!season || !from || !to || from === to.toLowerCase()) return [];
+    var targets = [];
+    season.games.forEach(function (g) {
+      if (g.id === currentGameId) return;
+      (g.players || []).forEach(function (p, i) {
+        if (p.removed || (p.name || '').trim().toLowerCase() !== from) return;
+        // Skip a game where someone else already holds the new name — renaming there would create
+        // exactly the in-game duplicate the blur guard exists to prevent.
+        if (hasDuplicateName(g.players, i, to)) return;
+        targets.push({ game: g, player: p });
+      });
+    });
+    return targets;
+  }
+
+  function applyRename(targets, newName) {
+    var to = (newName || '').trim();
+    targets.forEach(function (t) {
+      t.player.name = to;
+      // Per-player LWW, so the rename also wins against the other device's copy of that old game.
+      // Deliberately does not touch the game's updatedAt: that decides whole-game fields like the
+      // final score, and a rename has no business handing this device's copy of those a win.
+      t.player.metaUpdatedAt = nowIso();
+    });
+  }
+
+  function freshSeason(name) {
+    return { id: uid(), name: name, games: [] };
+  }
+
+  function freshGame(name, profileName) {
+    return {
+      id: uid(), name: name, createdAt: new Date().toISOString(), updatedAt: nowIso(),
+      finalized: false, result: null, teamScore: null, oppScore: null,
+      players: [emptyPlayer(profileName, 'accent')]
+    };
+  }
+
+  function freshProfile(name) {
+    var season = freshSeason('Season 1');
+    // Forward-looking only: nothing reads profile.sport yet (every stat function below still
+    // uses DEFAULT_SPORT directly), and there's no picker UI. It's here so a future second sport
+    // is "add a SPORTS entry + wire up this field," not another data-model migration.
+    return { id: uid(), name: name, sport: DEFAULT_SPORT, seasons: [season], activeSeasonId: season.id };
+  }
+
+  // `provisional` marks a state this device invented out of nothing (empty cache / unreadable
+  // local data) rather than one the user actually built. It is NOT real data and must never be
+  // merged into a real account: the fabricated placeholder profile carries a brand-new "Season 1"
+  // whose random id matches nothing on the server, so merging it permanently added another empty
+  // season to the shared account for every new phone or browser that ever signed in. See
+  // mergeStates, which discards a provisional local wholesale, and save(), which clears the flag
+  // the moment this state becomes real.
+  function defaultState() {
+    var profile = freshProfile('Player 1');
+    return { profiles: [profile], nav: { screen: 'home', profileId: null }, provisional: true };
+  }
+
+  // ---- migration chain: v1 (flat players) -> v2 (seasons) -> v3 (profiles) -> v4 (+stats/subs) -> v5 (staged games) ----
+
+  function migrateV3(v3) {
+    var profiles = v3.profiles.map(function (pr) {
+      var isActive = pr.id === v3.activeProfileId;
+      return {
+        id: pr.id,
+        name: pr.name,
+        seasons: pr.seasons,
+        activeSeasonId: isActive ? v3.activeSeasonId : (pr.seasons[0] ? pr.seasons[0].id : freshSeason('Season 1').id),
+        current: isActive ? v3.current : { gameName: '', players: [emptyPlayer(pr.name, 'accent')] }
+      };
+    });
+    return { profiles: profiles, nav: { screen: 'home', profileId: null } };
+  }
+
+  function migrateV4(v4) {
+    var profiles = v4.profiles.map(function (pr) {
+      pr.seasons.forEach(function (s) {
+        if (!s.games) s.games = [];
+        s.games.forEach(function (g) {
+          g.finalized = true;
+          g.result = null;
+          g.createdAt = g.savedAt || new Date().toISOString();
+        });
+      });
+      var current = pr.current;
+      var hasProgress = current && (
+        (current.gameName || '').trim() !== '' ||
+        (current.players || []).some(function (p) { return (p.log && p.log.length > 0) || p.onCourt || p.timeMs > 0; })
+      );
+      if (hasProgress) {
+        var season = pr.seasons.filter(function (s) { return s.id === pr.activeSeasonId; })[0] || pr.seasons[0];
+        season.games.unshift({
+          id: uid(),
+          name: (current.gameName || '').trim() || 'Untitled Game',
+          createdAt: new Date().toISOString(),
+          finalized: false,
+          result: null,
+          players: current.players
+        });
+      }
+      return { id: pr.id, name: pr.name, seasons: pr.seasons, activeSeasonId: pr.activeSeasonId };
+    });
+    var nav = (v4.nav && v4.nav.screen === 'tracker')
+      ? { screen: 'season', profileId: v4.nav.profileId }
+      : (v4.nav || { screen: 'home', profileId: null });
+    return { profiles: profiles, nav: nav };
+  }
+
+  function findGameInProfile(pr, gameId) {
+    if (!pr) return null;
+    for (var i = 0; i < pr.seasons.length; i++) {
+      var s = pr.seasons[i];
+      var g = s.games.filter(function (x) { return x.id === gameId; })[0];
+      if (g) return { season: s, game: g };
+    }
+    return null;
+  }
+
+  // resetClocks is only for a genuine cold load (see load() below): it restarts on-court players'
+  // clocks from "now" without banking elapsed time, so time the tab/device was closed doesn't
+  // count as play time. It must stay false for the sanitize() call inside mergeStates() — that
+  // runs every ~20s during a live cross-device resync (see resyncWithServer), and stomping
+  // subInAt there too would discard real elapsed play time every cycle instead of just once at
+  // boot, which looked like the Sub In/Out clock randomly resetting during live scoring.
+  //
+  // For that resync path, subInAt still needs to be periodically re-based against *this* device's
+  // own (server-corrected, see now() above) clock: a merge can hand this device a subInAt
+  // timestamp that another device originally wrote. now() corrects for steady clock offset between
+  // devices, but banking elapsed time into timeMs and re-stamping subInAt here still matters so a
+  // brief stretch of uncorrected local-vs-server latency, or a device that hasn't synced its offset
+  // yet, can't compound across repeated merges.
+  function sanitize(parsed, resetClocks) {
+    parsed.profiles.forEach(function (pr) {
+      if (!pr.seasons || pr.seasons.length === 0) pr.seasons = [freshSeason('Season 1')];
+      pr.seasons.forEach(function (s) {
+        if (!s.games) s.games = [];
+        s.games.forEach(function (g) {
+          g.players = (g.players || []).map(function (p, idx) { return withDefaults(p, g.id, idx); });
+          // Deterministic id (not a random uid) for the same reason as the legacy backfill above:
+          // two devices independently seeding a roster-less game must land on the *same* player,
+          // or the next merge unions them into two identical players named after the profile.
+          if (g.players.length === 0) {
+            var seeded = emptyPlayer(pr.name, 'accent');
+            seeded.id = 'seed-p-' + g.id;
+            seeded.metaUpdatedAt = LEGACY_META_TS; // never beat a real edit from the other device
+            g.players = [seeded];
+          }
+          if (typeof g.finalized !== 'boolean') g.finalized = true;
+          if (g.result !== 'W' && g.result !== 'L') g.result = null;
+          if (!g.createdAt) g.createdAt = new Date().toISOString();
+          if (resetClocks) {
+            activePlayers(g).forEach(function (p) { if (p.onCourt) p.subInAt = now(); });
+          } else {
+            activePlayers(g).forEach(function (p) {
+              if (p.onCourt && p.subInAt) {
+                p.timeMs += now() - p.subInAt;
+                p.subInAt = now();
+              }
+            });
+          }
+        });
+      });
+      if (!pr.seasons.some(function (s) { return s.id === pr.activeSeasonId; })) pr.activeSeasonId = pr.seasons[0].id;
+    });
+    if (!parsed.nav || SCREENS.indexOf(parsed.nav.screen) === -1) {
+      parsed.nav = { screen: 'home', profileId: null };
+    }
+    if (parsed.nav.profileId && !parsed.profiles.some(function (pr) { return pr.id === parsed.nav.profileId; })) {
+      parsed.nav = { screen: 'home', profileId: null };
+    }
+    if (parsed.nav.screen === 'tracker') {
+      var pr2 = parsed.profiles.filter(function (p) { return p.id === parsed.nav.profileId; })[0];
+      if (!findGameInProfile(pr2, parsed.nav.gameId)) {
+        parsed.nav = { screen: 'home', profileId: null };
+      }
+    }
+    return parsed;
+  }
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.profiles) && parsed.profiles.length > 0) return sanitize(parsed, true);
+      }
+      var v4raw = localStorage.getItem(LEGACY_V4_KEY);
+      if (v4raw) {
+        var v4 = JSON.parse(v4raw);
+        if (v4 && Array.isArray(v4.profiles) && v4.profiles.length > 0) {
+          return sanitize(migrateV4(v4), true);
+        }
+      }
+      var v3raw = localStorage.getItem(LEGACY_V3_KEY);
+      if (v3raw) {
+        var v3 = JSON.parse(v3raw);
+        if (v3 && Array.isArray(v3.profiles) && v3.profiles.length > 0 && v3.current) {
+          return sanitize(migrateV4(migrateV3(v3)), true);
+        }
+      }
+      var v2raw = localStorage.getItem(LEGACY_V2_KEY);
+      if (v2raw) {
+        var v2 = JSON.parse(v2raw);
+        if (v2 && Array.isArray(v2.seasons) && v2.seasons.length > 0 && v2.current) {
+          var wrappedProfile = { id: uid(), name: 'Player 1', seasons: v2.seasons };
+          var wrapped = { profiles: [wrappedProfile], activeProfileId: wrappedProfile.id, activeSeasonId: v2.activeSeasonId, current: v2.current };
+          return sanitize(migrateV4(migrateV3(wrapped)), true);
+        }
+      }
+      var v1raw = localStorage.getItem(LEGACY_V1_KEY);
+      if (v1raw) {
+        var v1 = JSON.parse(v1raw);
+        if (v1 && Array.isArray(v1.players) && v1.players.length > 0) {
+          var st = defaultState();
+          var gameId = uid();
+          st.profiles[0].seasons[0].games.unshift({
+            id: gameId, name: 'Untitled Game', createdAt: new Date().toISOString(),
+            finalized: false, result: null,
+            players: v1.players.map(function (p, idx) { return withDefaults(p, gameId, idx); })
+          });
+          return st;
+        }
+      }
+      return defaultState();
+    } catch (e) {
+      return defaultState();
+    }
+  }
+
+  function save() {
+    // Anything reaching save() is either a real user edit or a completed merge with the server,
+    // so this state is no longer the fabricated placeholder defaultState() hands out.
+    delete state.provisional;
+    // Stamp the open game so cross-device merges (see mergeStates below) can tell whose copy of
+    // a shared game is actually newer, instead of just clobbering whichever device saves last.
+    var g = activeGame();
+    if (g) g.updatedAt = nowIso();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    hasUnsyncedEdits = true;
+    flushState(); // serialised + coalesced; the local write above is what makes deferring safe
+  }
+
+  // Typing a name mutates state on every keystroke, and a full save per character means uploading
+  // the entire account each time. Coalesce those; blur commits whatever is still pending, so
+  // nothing is lost by deferring.
+  var nameSaveTimer = null;
+  function cancelNameSave() {
+    if (!nameSaveTimer) return;
+    clearTimeout(nameSaveTimer);
+    nameSaveTimer = null;
+  }
+  function saveNameSoon() {
+    cancelNameSave();
+    nameSaveTimer = setTimeout(function () {
+      nameSaveTimer = null;
+      save();
+    }, 400);
+  }
+  function flushNameSave() {
+    if (!nameSaveTimer) return;
+    cancelNameSave();
+    save();
+  }
+
+  // ---------- Server sync (cross-device) ----------
+  // Server is the source of truth going forward, but localStorage stays as an instant, offline-
+  // friendly local cache — save() always writes both. The only tricky part is the very first login
+  // on a *second* device: it may already have its own local data (e.g. a kid added before sync
+  // existed) that the server doesn't know about yet, so that gets merged in rather than overwritten.
+
+  function apiLogin(password) {
+    return fetch('/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: password }), credentials: 'same-origin'
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        return { ok: r.ok, body: body };
+      });
+    });
+  }
+
+  // Identifies this tab for the lifetime of the page. Sent with every write and echoed back on
+  // the broadcast, so a device can tell its own change from someone else's. Without it, every
+  // save bounced straight back as a "something changed" push: this device would resync and
+  // re-render mid-interaction, which destroyed the input you were typing a player name into
+  // after a single keystroke.
+  var CLIENT_ID = uid();
+
+  // The version this device last read from the server. Echoed back on every write so the server
+  // can reject a save built on a state someone else has already superseded (see PUT /api/state).
+  var stateVersion = 0;
+  var putInFlight = false;      // at most one write on the wire at a time
+  var putQueued = false;        // a save landed while that write was out
+  var hasUnsyncedEdits = false; // this device owes the server something (a push failed, or is pending)
+
+  function apiGetState() {
+    return fetch('/api/state', { credentials: 'same-origin' }).then(function (r) {
+      if (r.status === 401) return { authed: false };
+      return r.json().then(function (body) {
+        // Ignores request/response latency (typically well under a second) — negligible next to
+        // the tens-of-seconds clock skew this is actually correcting for.
+        if (typeof body.serverNow === 'number') clockOffset = body.serverNow - Date.now();
+        if (typeof body.version === 'number') stateVersion = body.version;
+        return { authed: true, state: body.state };
+      });
+    });
+  }
+
+  // Writes are serialised and coalesced instead of fired once per tap. Two distinct problems this
+  // solves: overlapping writes from this same device would now conflict with each other on the
+  // version check, and fetch gives no ordering guarantee, so a slow early PUT could previously
+  // land after a later one and roll the server back a tap. Rapid tapping collapses to one write.
+  function flushState() {
+    if (putInFlight) { putQueued = true; return; }
+    putInFlight = true;
+    putQueued = false;
+    apiPutState().then(function () {
+      putInFlight = false;
+      if (putQueued) flushState();
+    });
+  }
+
+  function apiPutState() {
+    // Cleared optimistically: a save() landing mid-flight sets it (and putQueued) again, which is
+    // exactly right — that edit is not covered by the body already on the wire.
+    hasUnsyncedEdits = false;
+    return fetch('/api/state', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state: state, version: stateVersion, clientId: CLIENT_ID }),
+      credentials: 'same-origin'
+    }).then(function (r) {
+      if (r.status === 409) {
+        // Someone else committed first. The 409 carries the winning state, so merge it in and
+        // queue a retry — our own taps survive because the merge unions them back in.
+        return r.json().then(function (body) {
+          if (typeof body.serverNow === 'number') clockOffset = body.serverNow - Date.now();
+          state = mergeStates(state, body.state);
+          stateVersion = body.version;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+          hasUnsyncedEdits = true;
+          putQueued = true;
+          render();
+        });
+      }
+      if (!r.ok) { hasUnsyncedEdits = true; return; }
+      return r.json().then(function (body) {
+        if (typeof body.version === 'number') stateVersion = body.version;
+      }).catch(function () { /* a 200 with an unreadable body still committed */ });
+    }).catch(function (e) {
+      hasUnsyncedEdits = true; // offline or server down — retried on the next save or resync
+      console.warn('sync failed, will retry', e);
+    });
+  }
+
+  // Union profiles by name (case-insensitive) so a kid entered independently on two devices
+  // before they ever synced doesn't get dropped either way — worst case a duplicate season
+  // shows up once, which is easy to spot and merge/delete by hand; nothing is ever silently lost.
+
+  // Unions two copies of one player's event log by id — tombstoned ("removed") wins over not,
+  // so an Undo made on either device always sticks instead of being resurrected by a merge from
+  // a device that doesn't know about it yet.
+  function mergeLogs(currentLog, incomingLog) {
+    var byId = {};
+    (currentLog || []).forEach(function (e) { byId[e.id] = e; });
+    (incomingLog || []).forEach(function (e) {
+      var existing = byId[e.id];
+      if (!existing || (e.removed && !existing.removed)) byId[e.id] = e;
+    });
+    return Object.keys(byId).map(function (id) { return byId[id]; })
+      .sort(function (a, b) { return (a.ts || 0) - (b.ts || 0); });
+  }
+
+  // Stat totals are always derived from the log rather than trusted as independent counters —
+  // that's what makes the log union above sufficient on its own: two devices tapping different
+  // stats for the same player at the same time end up with the union of both taps, not whichever
+  // device's counter happened to save last.
+  function recomputeFromLog(p) {
+    var keys = statFieldKeys(DEFAULT_SPORT);
+    keys.forEach(function (k) { p[k] = 0; });
+    activeLogEntries(p).forEach(function (e) { if (p[e.key] !== undefined) p[e.key]++; });
+  }
+
+  // Name/tone/on-court/played-time aren't event-sourced (nobody taps "sub in" for the same
+  // player from two devices at once in practice) — those still use simple last-writer-wins,
+  // scoped to just this player via metaUpdatedAt instead of the whole game.
+  function mergePlayer(current, incoming) {
+    var currentMeta = current.metaUpdatedAt || LEGACY_META_TS;
+    var incomingMeta = incoming.metaUpdatedAt || LEGACY_META_TS;
+    var base = JSON.parse(JSON.stringify(incomingMeta > currentMeta ? incoming : current));
+    base.log = mergeLogs(current.log, incoming.log);
+    recomputeFromLog(base);
+    // Deletion wins over not-deleted regardless of which side is newer — same rule as a tombstoned
+    // log entry, so removing a player on either device sticks instead of being undone by a resync
+    // from a device that hasn't heard about the removal yet.
+    base.removed = !!(current.removed || incoming.removed);
+    return base;
+  }
+
+  function mergePlayers(currentPlayers, incomingPlayers) {
+    var byId = {};
+    var order = [];
+    (currentPlayers || []).forEach(function (p) { byId[p.id] = p; order.push(p.id); });
+    (incomingPlayers || []).forEach(function (p) {
+      if (byId[p.id]) byId[p.id] = mergePlayer(byId[p.id], p);
+      else { byId[p.id] = p; order.push(p.id); }
+    });
+    return order.map(function (id) { return byId[id]; });
+  }
+
+  // Merges a season that exists (by id) on both sides: any game missing from either side is
+  // added (never dropped). For a game present on both sides, whole-game scalar fields (name,
+  // date, score, W/L, clock running) come from whichever copy has the newer updatedAt — but
+  // players are merged individually (see mergePlayer/mergeLogs above) instead of taking one
+  // side's players wholesale, so concurrent stat entry on two devices for the same live game
+  // no longer clobbers either device's taps.
+  function mergeGamesInto(existingSeason, incomingSeason) {
+    var byId = {};
+    existingSeason.games.forEach(function (g) { byId[g.id] = g; });
+    incomingSeason.games.forEach(function (g) {
+      var current = byId[g.id];
+      if (!current) {
+        existingSeason.games.push(g);
+        byId[g.id] = g;
+        return;
+      }
+      var currentTime = current.updatedAt ? new Date(current.updatedAt).getTime() : 0;
+      var incomingTime = g.updatedAt ? new Date(g.updatedAt).getTime() : 0;
+      var winner = incomingTime > currentTime ? g : current;
+      var merged = JSON.parse(JSON.stringify(winner));
+      merged.players = mergePlayers(current.players, g.players);
+      existingSeason.games[existingSeason.games.indexOf(current)] = merged;
+      byId[g.id] = merged;
+    });
+  }
+
+  function mergeStates(local, server) {
+    if (!server) return local;
+    if (!local) return server;
+    // A device that booted with nothing has no data worth contributing — take the account as-is
+    // rather than unioning a fabricated profile/season into it (see defaultState).
+    if (local.provisional) return sanitize(JSON.parse(JSON.stringify(server)));
+    // Preserve wherever this device currently is (sanitize() below will reset it to home if the
+    // merge somehow leaves it pointing at something that no longer exists) — a resync shouldn't
+    // boot the user back to the home screen every time they switch back to the app mid-game.
+    var merged = { profiles: [], nav: (local && local.nav) || { screen: 'home', profileId: null } };
+    var byNameLower = {};
+    function addProfile(pr) {
+      var key = (pr.name || '').trim().toLowerCase();
+      if (byNameLower[key]) {
+        var existing = byNameLower[key];
+        var seasonIds = {};
+        existing.seasons.forEach(function (s) { seasonIds[s.id] = true; });
+        pr.seasons.forEach(function (s) {
+          if (!seasonIds[s.id]) {
+            existing.seasons.push(s);
+            seasonIds[s.id] = true;
+          } else {
+            mergeGamesInto(existing.seasons.filter(function (es) { return es.id === s.id; })[0], s);
+          }
+        });
+      } else {
+        var copy = JSON.parse(JSON.stringify(pr));
+        byNameLower[key] = copy;
+        merged.profiles.push(copy);
+      }
+    }
+    (local.profiles || []).forEach(addProfile);
+    (server.profiles || []).forEach(addProfile);
+    return sanitize(merged);
+  }
+
+  function showLogin(show) {
+    document.getElementById('loginView').style.display = show ? 'flex' : 'none';
+    document.getElementById('appRoot').style.display = show ? 'none' : '';
+  }
+
+  // ---------- Keep the screen awake while the app is open ----------
+  // Screen Wake Lock API (iOS Safari 16.4+; silently no-ops on anything older/unsupported —
+  // nothing to fall back to, and that's fine). The OS releases the lock whenever the tab/app
+  // goes to the background, so it has to be re-requested every time the page comes back to
+  // the foreground, not just once at boot.
+  var wakeLock = null;
+  async function requestWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+    } catch (err) {
+      console.warn('wake lock request failed', err);
+    }
+  }
+  // Re-merge with the server every time the app comes back to the foreground — not just once
+  // at login. This is what actually catches another device's changes made while this one was
+  // backgrounded, instead of only reconciling once and then blindly overwriting on every save
+  // from then on (see mergeGamesInto's updatedAt tie-break for why that's now safe to do).
+  function resyncWithServer() {
+    lastSyncAt = Date.now(); // local-only comparison, so the raw clock is fine here
+    apiGetState().then(function (res) {
+      if (!res.authed) {
+        closeEventStream(); // stop EventSource retrying a 401 every few seconds
+        return; // next real action will show the login screen
+      }
+      state = mergeStates(state, res.state);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      // Deliberately NOT save(): a pull owes the server nothing. Writing back unconditionally
+      // would bump the version and broadcast, the other device would pull and write back in turn,
+      // and the two would ping-pong forever now that changes are pushed rather than polled. Only
+      // push when this device is actually holding edits the server hasn't accepted yet.
+      if (hasUnsyncedEdits) flushState();
+      render();
+    });
+  }
+  // ---------- Live change notifications ----------
+  // The server pushes a bare version number whenever any device in the family commits a write;
+  // this device pulls only when that version is ahead of its own. Our own committed writes echo
+  // back at the version we already hold, so they're ignored rather than causing a pointless GET.
+  var eventStream = null;
+  var streamConnected = false;
+  var lastSyncAt = 0;
+
+  function connectEventStream() {
+    if (!window.EventSource || eventStream) return;
+    try {
+      eventStream = new EventSource('/api/events');
+    } catch (e) {
+      return; // no stream: the interval below falls back to the faster poll
+    }
+    eventStream.onopen = function () { streamConnected = true; };
+    eventStream.onerror = function () { streamConnected = false; }; // EventSource reconnects itself
+    eventStream.onmessage = function (ev) {
+      try {
+        var msg = JSON.parse(ev.data);
+        // Our own write coming back. The broadcast is sent before the PUT response lands, so
+        // stateVersion is usually still the old number here and the version check below would
+        // wrongly treat it as someone else's change.
+        if (msg.origin && msg.origin === CLIENT_ID) return;
+        if (typeof msg.version === 'number' && msg.version > stateVersion) resyncWithServer();
+      } catch (e) { /* ignore malformed frames */ }
+    };
+  }
+
+  function closeEventStream() {
+    if (!eventStream) return;
+    eventStream.close();
+    eventStream = null;
+    streamConnected = false;
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') {
+      requestWakeLock();
+      connectEventStream(); // iOS tears the stream down in the background
+      resyncWithServer();
+    }
+  });
+
+  function finishBoot(serverState) {
+    state = mergeStates(state, serverState);
+    save();
+    showLogin(false);
+    render();
+    requestWakeLock();
+    connectEventStream();
+  }
+
+  function boot() {
+    apiGetState().then(function (res) {
+      if (!res.authed) { showLogin(true); return; }
+      finishBoot(res.state);
+    });
+  }
+
+  document.getElementById('loginForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var pwField = document.getElementById('loginPassword');
+    var errEl = document.getElementById('loginError');
+    errEl.textContent = '';
+    apiLogin(pwField.value).then(function (res) {
+      if (!res.ok) {
+        errEl.textContent = (res.body && res.body.error) || 'Login failed';
+        return;
+      }
+      pwField.value = '';
+      apiGetState().then(function (r2) { finishBoot(r2.state); });
+    });
+  });
+
+  var state = load(); // local copy loads instantly (offline-first); boot() reconciles with the server
+
+  function getProfile(id) {
+    return state.profiles.filter(function (pr) { return pr.id === id; })[0];
+  }
+  function activeProfile() {
+    return getProfile(state.nav.profileId);
+  }
+  function activeSeasonOf(profile) {
+    return profile.seasons.filter(function (s) { return s.id === profile.activeSeasonId; })[0] || profile.seasons[0];
+  }
+  function activeGame() {
+    var found = findGameInProfile(activeProfile(), state.nav.gameId);
+    return found ? found.game : null;
+  }
+  function activeGameSeason() {
+    var found = findGameInProfile(activeProfile(), state.nav.gameId);
+    return found ? found.season : null;
+  }
+  function gameHasStats(g) {
+    return activePlayers(g).some(function (p) { return activeLogEntries(p).length > 0 || p.onCourt || p.timeMs > 0; });
+  }
+  function gameStatusInfo(g) {
+    if (g.finalized) {
+      if (g.result === 'W') return { label: 'W', cls: 'win' };
+      if (g.result === 'L') return { label: 'L', cls: 'loss' };
+      return { label: 'Final', cls: 'neutral' };
+    }
+    return gameHasStats(g) ? { label: 'In Progress', cls: 'progress' } : { label: 'Scheduled', cls: 'scheduled' };
+  }
+  function avg(total, gp) {
+    return gp === 0 ? '0.0' : (total / gp).toFixed(1);
+  }
+  // Did this kid actually appear in this game, or is the card just an unused roster spot? A
+  // scheduled game's roster is set up before tip-off, and kids get added who then never get in,
+  // so a card on its own is not an appearance — a tracked stat, tracked floor time, or being on
+  // court right now is. Without this, every empty card inflated GP and quietly deflated that
+  // kid's per-game averages. (A kid who genuinely played but had no taps and no clock is
+  // indistinguishable from one who sat, and counts as a DNP.)
+  function appearedIn(p) {
+    return activeLogEntries(p).length > 0 || p.timeMs > 0 || p.onCourt;
+  }
+  function seasonAverages(season) {
+    var cfg = sportConfig(DEFAULT_SPORT);
+    var byName = {};
+    // Key on the same trimmed/lowercased identity hasDuplicateName uses, not the raw string —
+    // otherwise a name typed with different casing/whitespace in two games silently splits one
+    // player's stats into two rows instead of combining them. (Renaming a player now fans the
+    // new name out across the season too — see propagateRename — so a mid-season rename stops
+    // leaving a stale row here under the old name.)
+    season.games.filter(function (g) { return g.finalized; }).forEach(function (g) {
+      activePlayers(g).forEach(function (p) {
+        if (!appearedIn(p)) return;
+        var key = (p.name || '').trim().toLowerCase();
+        if (!byName[key]) {
+          var fresh = { name: (p.name || '').trim(), gp: 0, gameIds: {}, pts: 0, timeMs: 0 };
+          cfg.tallyStats.forEach(function (s) { fresh[s.key] = 0; });
+          cfg.shotTypes.forEach(function (s) { fresh[s.madeKey] = 0; fresh[s.missKey] = 0; });
+          byName[key] = fresh;
+        }
+        var a = byName[key];
+        // GP counts distinct games, not roster cards. Two devices adding the same kid to one game
+        // produces two cards (mergePlayers unions by id and can't tell them apart), and each one
+        // used to count as another game played.
+        if (!a.gameIds[g.id]) {
+          a.gameIds[g.id] = true;
+          a.gp++;
+        }
+        a.pts += points(p);
+        cfg.tallyStats.forEach(function (s) { a[s.key] += p[s.key]; });
+        cfg.shotTypes.forEach(function (s) { a[s.madeKey] += p[s.madeKey]; a[s.missKey] += p[s.missKey]; });
+        a.timeMs += p.timeMs;
+      });
+    });
+    return Object.keys(byName).map(function (name) { return byName[name]; }).sort(function (x, y) { return (y.pts / y.gp) - (x.pts / x.gp); });
+  }
+
+  // W/L was captured per game but never totalled anywhere — the first thing anyone asks about a
+  // season is the record, so it now shows on the season header, the season list, and each tile.
+  function seasonRecord(season) {
+    var w = 0, l = 0;
+    season.games.forEach(function (g) {
+      if (!g.finalized) return;
+      if (g.result === 'W') w++;
+      else if (g.result === 'L') l++;
+    });
+    return { w: w, l: l };
+  }
+  function profileRecord(pr) {
+    var w = 0, l = 0;
+    pr.seasons.forEach(function (s) {
+      var r = seasonRecord(s);
+      w += r.w; l += r.l;
+    });
+    return { w: w, l: l };
+  }
+  function recordHtml(rec) {
+    if (rec.w + rec.l === 0) return '';
+    return '<span class="record-chip"><b>' + rec.w + '</b>&ndash;<i>' + rec.l + '</i></span>';
+  }
+
+  function formatTime(ms) {
+    var totalSec = Math.floor(ms / 1000);
+    var m = Math.floor(totalSec / 60);
+    var s = totalSec % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function currentPlayTime(p) {
+    // Default to running for games saved before the clock in/out feature existed.
+    var g = activeGame();
+    var clockRunning = !g || g.clockRunning !== false;
+    return p.timeMs + (p.onCourt && clockRunning && p.subInAt ? (now() - p.subInAt) : 0);
+  }
+
+  var dateEl = document.getElementById('gameDate');
+  dateEl.textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+
+  function points(p) {
+    return sportConfig(DEFAULT_SPORT).shotTypes.reduce(function (sum, s) {
+      return sum + p[s.madeKey] * s.value;
+    }, 0);
+  }
+  function pct(made, attempts) {
+    if (attempts === 0) return '—';
+    return Math.round((made / attempts) * 100) + '%';
+  }
+  function formatDate(iso) {
+    var d = new Date(iso);
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+  function toDatetimeLocalValue(iso) {
+    var d = new Date(iso);
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  function escapeHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function showScreen(name) {
+    SCREENS.forEach(function (s) {
+      document.getElementById(s + 'View').classList.toggle('active', s === name);
+    });
+  }
+
+  function render() {
+    showScreen(state.nav.screen);
+    if (state.nav.screen === 'home') renderHome();
+    else if (state.nav.screen === 'profile') renderProfileScreen();
+    else if (state.nav.screen === 'season') renderSeasonScreen();
+    else if (state.nav.screen === 'tracker') renderTrackerScreen();
+  }
+
+  // ---------- Home screen ----------
+  function renderHome() {
+    var grid = document.getElementById('profileGrid');
+    grid.innerHTML = state.profiles.map(function (pr) {
+      var rec = profileRecord(pr);
+      return '<div class="profile-tile" role="button" tabindex="0" data-openprofile="' + pr.id + '">' +
+        '<div class="tile-actions">' +
+          '<button class="icon-btn" data-renameprofile="' + pr.id + '" title="Rename" aria-label="Rename ' + escapeHtml(pr.name) + '">&#9998;</button>' +
+          (state.profiles.length > 1 ? '<button class="icon-btn danger" data-delprofile="' + pr.id + '" title="Delete" aria-label="Delete ' + escapeHtml(pr.name) + '">&times;</button>' : '') +
+        '</div>' +
+        '<div class="name">' + escapeHtml(pr.name) + '</div>' +
+        '<div class="meta">' + pr.seasons.length + ' season' + (pr.seasons.length === 1 ? '' : 's') + '</div>' +
+        (rec.w + rec.l > 0 ? recordHtml(rec) : '') +
+      '</div>';
+    }).join('');
+
+    grid.querySelectorAll('[data-openprofile]').forEach(function (el) {
+      el.addEventListener('click', function () { openProfile(el.dataset.openprofile); });
+    });
+    grid.querySelectorAll('[data-renameprofile]').forEach(function (el) {
+      el.addEventListener('click', function (ev) { ev.stopPropagation(); renameProfile(el.dataset.renameprofile); });
+    });
+    grid.querySelectorAll('[data-delprofile]').forEach(function (el) {
+      el.addEventListener('click', function (ev) { ev.stopPropagation(); deleteProfile(el.dataset.delprofile); });
+    });
+  }
+
+  function openProfile(id) {
+    state.nav = { screen: 'profile', profileId: id };
+    save();
+    render();
+  }
+  function renameProfile(id) {
+    var pr = getProfile(id);
+    var name = prompt('Rename this kid or team:', pr.name);
+    if (name && name.trim()) {
+      pr.name = name.trim();
+      save();
+      render();
+    }
+  }
+  function deleteProfile(id) {
+    if (state.profiles.length <= 1) return;
+    var pr = getProfile(id);
+    if (!confirm('Delete "' + pr.name + '"? This permanently deletes all their seasons and saved games.')) return;
+    state.profiles = state.profiles.filter(function (p) { return p.id !== id; });
+    if (state.nav.profileId === id) state.nav = { screen: 'home', profileId: null };
+    save();
+    render();
+  }
+
+  document.getElementById('addProfileBtn').addEventListener('click', function () {
+    var name = prompt('Name this kid or team (e.g. "Jordan" or "Rec League Warriors"):');
+    if (name && name.trim()) {
+      var profile = freshProfile(name.trim());
+      state.profiles.push(profile);
+      save();
+      openProfile(profile.id);
+    }
+  });
+  document.getElementById('profileBackBtn').addEventListener('click', function () {
+    state.nav = { screen: 'home', profileId: null };
+    save();
+    render();
+  });
+
+  // ---------- Profile screen (seasons list) ----------
+  function renderProfileScreen() {
+    var pr = activeProfile();
+    document.getElementById('profileTitle').textContent = pr.name;
+    var list = document.getElementById('seasonList');
+    list.innerHTML = pr.seasons.map(function (s) {
+      var gcount = s.games.length;
+      return '<div class="list-row" role="button" tabindex="0" data-openseason="' + s.id + '">' +
+        '<span class="row-name">' + escapeHtml(s.name) + '</span>' +
+        recordHtml(seasonRecord(s)) +
+        '<span class="row-meta">' + gcount + ' game' + (gcount === 1 ? '' : 's') + '</span>' +
+        '<div class="row-actions">' +
+          '<button class="icon-btn" data-renameseason="' + s.id + '" title="Rename" aria-label="Rename ' + escapeHtml(s.name) + '">&#9998;</button>' +
+          (pr.seasons.length > 1 ? '<button class="icon-btn danger" data-delseason="' + s.id + '" title="Delete" aria-label="Delete ' + escapeHtml(s.name) + '">&times;</button>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    list.querySelectorAll('[data-openseason]').forEach(function (el) {
+      el.addEventListener('click', function () { openSeason(el.dataset.openseason); });
+    });
+    list.querySelectorAll('[data-renameseason]').forEach(function (el) {
+      el.addEventListener('click', function (ev) { ev.stopPropagation(); renameSeason(el.dataset.renameseason); });
+    });
+    list.querySelectorAll('[data-delseason]').forEach(function (el) {
+      el.addEventListener('click', function (ev) { ev.stopPropagation(); deleteSeason(el.dataset.delseason); });
+    });
+  }
+
+  function openSeason(seasonId) {
+    var pr = activeProfile();
+    pr.activeSeasonId = seasonId;
+    state.nav.screen = 'season';
+    save();
+    render();
+  }
+  function renameSeason(seasonId) {
+    var pr = activeProfile();
+    var s = pr.seasons.filter(function (x) { return x.id === seasonId; })[0];
+    var name = prompt('Rename this season:', s.name);
+    if (name && name.trim()) {
+      s.name = name.trim();
+      save();
+      render();
+    }
+  }
+  function deleteSeason(seasonId) {
+    var pr = activeProfile();
+    if (pr.seasons.length <= 1) return;
+    var s = pr.seasons.filter(function (x) { return x.id === seasonId; })[0];
+    if (!confirm('Delete "' + s.name + '"? This permanently deletes its saved games.')) return;
+    pr.seasons = pr.seasons.filter(function (x) { return x.id !== seasonId; });
+    if (pr.activeSeasonId === seasonId) pr.activeSeasonId = pr.seasons[0].id;
+    save();
+    render();
+  }
+
+  document.getElementById('addSeasonBtn').addEventListener('click', function () {
+    var name = prompt('Name the new season (e.g. "Fall 2026"):');
+    if (name && name.trim()) {
+      var pr = activeProfile();
+      var season = freshSeason(name.trim());
+      pr.seasons.push(season);
+      save();
+      render();
+    }
+  });
+
+  // ---------- Season screen (games list) ----------
+  function renderSeasonAverages(season) {
+    var container = document.getElementById('seasonAverages');
+    var rows = seasonAverages(season);
+    if (rows.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+    container.innerHTML =
+      '<h3 class="avg-heading">Season Averages</h3>' +
+      '<div class="avg-scroll"><table class="avg-table">' +
+        '<thead><tr><th>Player</th><th>GP</th><th>PPG</th><th>RPG</th><th>APG</th><th>SPG</th><th>BPG</th><th>TOPG</th><th>FG%</th><th>3P%</th><th>FT%</th><th>MPG</th></tr></thead>' +
+        '<tbody>' + rows.map(function (a) {
+          // FG% is basketball's own convention (2PT + 3PT combined, FT reported separately) —
+          // derived here at render time rather than folded into the generic aggregate above.
+          var madeFG = a.made2 + a.made3;
+          var attFG = (a.made2 + a.miss2) + (a.made3 + a.miss3);
+          var att3 = a.made3 + a.miss3;
+          var att1 = a.made1 + a.miss1;
+          return '<tr><td class="avg-name">' + escapeHtml(a.name) + '</td><td>' + a.gp + '</td><td>' + avg(a.pts, a.gp) + '</td><td>' +
+            avg(a.reb, a.gp) + '</td><td>' + avg(a.ast, a.gp) + '</td><td>' + avg(a.stl, a.gp) + '</td><td>' + avg(a.blk, a.gp) + '</td><td>' +
+            avg(a.to, a.gp) + '</td><td>' + pct(madeFG, attFG) + '</td><td>' + pct(a.made3, att3) + '</td><td>' + pct(a.made1, att1) + '</td><td>' + formatTime(a.timeMs / a.gp) + '</td></tr>';
+        }).join('') +
+        '</tbody>' +
+      '</table></div>';
+  }
+
+  function gameRowHtml(g) {
+    var status = gameStatusInfo(g);
+    var scoreHtml = (g.teamScore == null && g.oppScore == null) ? '' :
+      '<span class="row-score">' + (g.teamScore == null ? '&ndash;' : g.teamScore) + ' &ndash; ' + (g.oppScore == null ? '&ndash;' : g.oppScore) + '</span>';
+    return '<div class="list-row" role="button" tabindex="0" data-opengame="' + g.id + '">' +
+      '<span class="row-name">' + escapeHtml(g.name) + '</span>' +
+      '<span class="status-chip ' + status.cls + '">' + escapeHtml(status.label) + '</span>' +
+      scoreHtml +
+      '<span class="row-meta">' + formatDate(g.createdAt) + '</span>' +
+      '<div class="row-actions">' +
+        '<button class="icon-btn danger" data-delgame="' + g.id + '" title="Delete" aria-label="Delete ' + escapeHtml(g.name) + '">&times;</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderSeasonScreen() {
+    var pr = activeProfile();
+    var season = activeSeasonOf(pr);
+    document.getElementById('seasonBackLabel').textContent = pr.name;
+    document.getElementById('seasonTitle').innerHTML = escapeHtml(season.name) + recordHtml(seasonRecord(season));
+    renderSeasonAverages(season);
+
+    var sortedGames = season.games.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
+    var list = document.getElementById('gameList');
+    list.innerHTML = sortedGames.length === 0
+      ? '<div class="list-empty">No games yet — schedule one to get started</div>'
+      : sortedGames.map(gameRowHtml).join('');
+
+    list.querySelectorAll('[data-opengame]').forEach(function (el) {
+      el.addEventListener('click', function () { openGame(el.dataset.opengame); });
+    });
+    list.querySelectorAll('[data-delgame]').forEach(function (el) {
+      el.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var gameId = el.dataset.delgame;
+        var game = season.games.filter(function (g) { return g.id === gameId; })[0];
+        if (!confirm('Delete "' + (game ? game.name : 'this game') + '"? This cannot be undone.')) return;
+        season.games = season.games.filter(function (g) { return g.id !== gameId; });
+        save();
+        renderSeasonScreen();
+      });
+    });
+  }
+
+  function openGame(gameId) {
+    state.nav = { screen: 'tracker', profileId: state.nav.profileId, gameId: gameId };
+    save();
+    render();
+  }
+
+  document.getElementById('seasonBackBtn').addEventListener('click', function () {
+    state.nav.screen = 'profile';
+    save();
+    render();
+  });
+  document.getElementById('scheduleGameBtn').addEventListener('click', function () {
+    var name = prompt('Name this game (e.g. "vs Eagles") — leave blank to name it later:');
+    if (name === null) return;
+    var pr = activeProfile();
+    var season = activeSeasonOf(pr);
+    var finalName = name.trim() || ('Game ' + (season.games.length + 1));
+    var game = freshGame(finalName, pr.name);
+    season.games.unshift(game);
+    save();
+    openGame(game.id);
+  });
+
+  // ---------- Tracker screen (a specific game) ----------
+  function renderTrackerScreen() {
+    var g = activeGame();
+    if (!g) {
+      state.nav.screen = 'season';
+      save();
+      render();
+      return;
+    }
+    var season = activeGameSeason();
+    document.getElementById('trackerBackLabel').textContent = season.name;
+
+    var nameInput = document.getElementById('gameNameInput');
+    if (document.activeElement !== nameInput) nameInput.value = g.name;
+
+    var dateInput = document.getElementById('gameDateInput');
+    if (document.activeElement !== dateInput) dateInput.value = toDatetimeLocalValue(g.createdAt);
+
+    var teamScoreInput = document.getElementById('teamScoreInput');
+    if (document.activeElement !== teamScoreInput) teamScoreInput.value = g.teamScore == null ? '' : g.teamScore;
+    var oppScoreInput = document.getElementById('oppScoreInput');
+    if (document.activeElement !== oppScoreInput) oppScoreInput.value = g.oppScore == null ? '' : g.oppScore;
+
+    document.getElementById('markWinBtn').classList.toggle('active', g.finalized && g.result === 'W');
+    document.getElementById('markLossBtn').classList.toggle('active', g.finalized && g.result === 'L');
+
+    var clockBtn = document.getElementById('clockToggleBtn');
+    var clockRunning = g.clockRunning !== false;
+    clockBtn.textContent = clockRunning ? 'Clock Out' : 'Clock In';
+    clockBtn.classList.toggle('paused', !clockRunning);
+
+    var cardsEl = document.getElementById('cards');
+
+    // A change pushed from the other device rebuilds every card, which would otherwise throw away
+    // the input someone is part-way through typing a name into. Remember the caret and restore it
+    // once the new cards are in place.
+    var focusedName = document.activeElement;
+    var caret = null;
+    if (focusedName && focusedName.classList &&
+        focusedName.classList.contains('name-input') && cardsEl.contains(focusedName)) {
+      caret = {
+        idx: focusedName.dataset.idx,
+        start: focusedName.selectionStart,
+        end: focusedName.selectionEnd,
+      };
+    }
+
+    cardsEl.innerHTML = '';
+
+    // data-idx must stay an index into the raw g.players array (every handler below indexes with
+    // it), so render order is decided on {player, idx} pairs rather than by reordering the array.
+    // On-court players sort first: they're the ones being tapped, and they shouldn't be buried
+    // under the bench. Array.prototype.sort is stable, so the bench keeps its existing order.
+    var entries = [];
+    g.players.forEach(function (p, idx) { if (!p.removed) entries.push({ p: p, idx: idx }); });
+    entries.sort(function (a, b) { return (b.p.onCourt ? 1 : 0) - (a.p.onCourt ? 1 : 0); });
+
+    var visibleCount = entries.length;
+    // Once anyone is on the floor, the bench collapses to one-line strips — a full card each meant
+    // ~460px per player and 2+ screens of scrolling for a 3-player game. If nobody has been subbed
+    // in (e.g. tracking an opposing player without using Sub In/Out at all), nothing collapses.
+    var anyOnCourt = entries.some(function (e) { return e.p.onCourt; });
+
+    entries.forEach(function (entry) {
+      var p = entry.p;
+      var idx = entry.idx;
+
+      if (anyOnCourt && !p.onCourt && !p.expanded) {
+        var strip = document.createElement('div');
+        strip.className = 'bench-strip';
+        strip.style.setProperty('--tone-color', p.tone === 'accent' ? 'var(--accent)' : 'var(--neutral-chip)');
+        strip.innerHTML =
+          '<button class="bench-main" data-expand="' + idx + '" aria-label="Show full stats for ' + escapeHtml(p.name) + '">' +
+            '<span class="bench-name">' + escapeHtml(p.name) + '</span>' +
+            '<span class="bench-stat"><b>' + points(p) + '</b> PTS</span>' +
+            '<span class="bench-stat">' + formatTime(currentPlayTime(p)) + '</span>' +
+          '</button>' +
+          '<button class="bench-sub" data-sub="' + idx + '">Sub In</button>';
+        cardsEl.appendChild(strip);
+        return;
+      }
+
+      var att1 = p.made1 + p.miss1;
+      var att2 = p.made2 + p.miss2;
+      var att3 = p.made3 + p.miss3;
+      var attFG = att2 + att3;
+      var madeFG = p.made2 + p.made3;
+
+      var card = document.createElement('div');
+      card.className = 'card' + (p.onCourt ? ' on-court' : '');
+      card.style.setProperty('--tone-color', p.tone === 'accent' ? 'var(--accent)' : 'var(--neutral-chip)');
+
+      card.innerHTML =
+        '<div class="card-head">' +
+          '<input class="name-input" value="' + escapeHtml(p.name) + '" data-idx="' + idx + '" aria-label="Player name" />' +
+          (p.onCourt ? '<span class="on-pill">On</span>' : '') +
+          (!p.onCourt && anyOnCourt ? '<button class="icon-btn" data-collapse="' + idx + '" title="Collapse" aria-label="Collapse ' + escapeHtml(p.name) + '">&minus;</button>' : '') +
+          (visibleCount > 1 ? '<button class="remove-btn" data-remove="' + idx + '" aria-label="Remove player" title="Remove player">&times;</button>' : '') +
+          '<div class="score-block"><div class="score">' + points(p) + '</div><div class="score-label">points</div></div>' +
+        '</div>' +
+        // Only the totals the buttons below can't show: FG aggregates 2s+3s, and the percentages
+        // are derived. Per-stat counts (REB/AST/STL/BLK/TO) were repeating the button faces.
+        '<div class="stat-row">' +
+          '<span><b>' + madeFG + '</b>/' + attFG + ' FG</span>' +
+          '<span class="sep">&middot;</span>' +
+          '<span><b>' + pct(madeFG, attFG) + '</b></span>' +
+          '<span class="sep">&middot;</span>' +
+          '<span><b>' + p.made1 + '</b>/' + att1 + ' FT</span>' +
+        '</div>' +
+        '<div class="extra-stats">' +
+          subBtnHtml(idx, p) +
+          sportConfig(DEFAULT_SPORT).tallyStats.map(function (s) {
+            return statBtnHtml(idx, s.key, s.label, p[s.key], s.tone);
+          }).join('') +
+        '</div>' +
+        '<div class="shot-groups">' +
+          sportConfig(DEFAULT_SPORT).shotTypes.map(function (s) {
+            var attempts = p[s.madeKey] + p[s.missKey];
+            return shotGroupHtml(idx, s.label, s.madeKey, s.missKey, p[s.madeKey], p[s.missKey], attempts);
+          }).join('') +
+        '</div>' +
+        '<div class="card-foot">' +
+          '<button class="undo-btn" data-undo="' + idx + '"' + (activeLogEntries(p).length === 0 ? ' disabled' : '') + '>Undo last</button>' +
+          '<button class="log-toggle" data-logtoggle="' + idx + '">' + (p.logOpen ? 'Hide' : 'Show') + ' shot log</button>' +
+        '</div>' +
+        '<div class="log' + (p.logOpen ? ' open' : '') + '" data-log="' + idx + '">' + logHtml(p) + '</div>';
+
+      cardsEl.appendChild(card);
+    });
+
+    cardsEl.querySelectorAll('.name-input').forEach(function (el) {
+      var lastGoodName = activeGame().players[+el.dataset.idx].name;
+      el.addEventListener('input', function () {
+        var p = activeGame().players[+el.dataset.idx];
+        p.name = el.value;
+        p.metaUpdatedAt = nowIso();
+        saveNameSoon();
+      });
+      // Checked on blur rather than every keystroke, so typing a name that happens to pass
+      // through another player's current name mid-edit (e.g. "Jake" -> "Jake Jr") isn't blocked.
+      el.addEventListener('blur', function () {
+        var players = activeGame().players;
+        var idx = +el.dataset.idx;
+        var p = players[idx];
+        if (hasDuplicateName(players, idx, p.name)) {
+          alert('Another player in this game is already named "' + p.name.trim() + '". Player names must be unique within a game.');
+          p.name = lastGoodName;
+          el.value = lastGoodName;
+          p.metaUpdatedAt = nowIso();
+          cancelNameSave(); // drop the pending write of the rejected name
+          save();           // persist the revert instead
+        } else {
+          var targets = renameTargetsInSeason(activeGameSeason(), activeGame().id, lastGoodName, p.name);
+          var spread = false;
+          if (targets.length) {
+            var games = {};
+            targets.forEach(function (t) { games[t.game.id] = true; });
+            var n = Object.keys(games).length;
+            if (confirm('Also rename "' + lastGoodName.trim() + '" to ' + p.name.trim() + ' in ' +
+                        n + ' other game' + (n === 1 ? '' : 's') + ' this season?\n\n' +
+                        'Keeps the season averages under one name instead of two.')) {
+              applyRename(targets, p.name);
+              spread = true;
+            }
+          }
+          lastGoodName = p.name;
+          if (spread) {
+            cancelNameSave(); // the save below already carries this game's rename
+            save();
+          } else {
+            flushNameSave(); // commit now rather than waiting out the debounce
+          }
+        }
+      });
+    });
+    cardsEl.querySelectorAll('[data-make], [data-miss]').forEach(function (el) {
+      el.addEventListener('click', function () { handleShot(el); });
+    });
+    cardsEl.querySelectorAll('[data-stat]').forEach(function (el) {
+      el.addEventListener('click', function () { handleStat(el); });
+    });
+    cardsEl.querySelectorAll('[data-remove]').forEach(function (el) {
+      el.addEventListener('click', function () { handleRemove(+el.dataset.remove); });
+    });
+    cardsEl.querySelectorAll('[data-sub]').forEach(function (el) {
+      el.addEventListener('click', function () { handleSub(+el.dataset.sub); });
+    });
+    // `expanded` is a temporary override of the bench collapse, not a persistent preference —
+    // handleSub clears it, so a player subbed out collapses again rather than staying open forever.
+    cardsEl.querySelectorAll('[data-expand]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        activeGame().players[+el.dataset.expand].expanded = true;
+        save();
+        render();
+      });
+    });
+    cardsEl.querySelectorAll('[data-collapse]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        activeGame().players[+el.dataset.collapse].expanded = false;
+        save();
+        render();
+      });
+    });
+    cardsEl.querySelectorAll('[data-undo]').forEach(function (el) {
+      el.addEventListener('click', function () { handleUndo(+el.dataset.undo); });
+    });
+    cardsEl.querySelectorAll('[data-logtoggle]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var idx = +el.dataset.logtoggle;
+        activeGame().players[idx].logOpen = !activeGame().players[idx].logOpen;
+        save();
+        render();
+      });
+    });
+
+    if (caret) {
+      var refocus = cardsEl.querySelector('.name-input[data-idx="' + caret.idx + '"]');
+      if (refocus) {
+        refocus.focus();
+        try {
+          refocus.setSelectionRange(caret.start, caret.end);
+        } catch (e) { /* selection API unavailable on this input type */ }
+      }
+    }
+  }
+
+  function shotGroupHtml(idx, label, madeKey, missKey, made, miss, att) {
+    return (
+      '<div class="shot-group">' +
+        '<div class="shot-tag">' + label + '<br/>' + pct(made, att) + '</div>' +
+        '<button class="shot-btn make" data-make data-idx="' + idx + '" data-key="' + madeKey + '"><span class="n">' + made + '</span><span class="l">Make</span></button>' +
+        '<button class="shot-btn miss" data-miss data-idx="' + idx + '" data-key="' + missKey + '"><span class="n">' + miss + '</span><span class="l">Miss</span></button>' +
+      '</div>'
+    );
+  }
+
+  function statBtnHtml(idx, key, label, count, tone) {
+    return '<button class="shot-btn ' + tone + '" data-stat data-idx="' + idx + '" data-key="' + key + '"><span class="n">' + count + '</span><span class="l">' + label + '</span></button>';
+  }
+
+  function subBtnHtml(idx, p) {
+    return '<button class="shot-btn ' + (p.onCourt ? 'sub-on' : 'sub-off') + '" data-sub="' + idx + '"><span class="n" data-playtime="' + idx + '">' + formatTime(currentPlayTime(p)) + '</span><span class="l">' + (p.onCourt ? 'Sub Out' : 'Sub In') + '</span></button>';
+  }
+
+  function logHtml(p) {
+    var entries = activeLogEntries(p);
+    if (entries.length === 0) return '<div class="log-empty">No shots yet</div>';
+    return entries.map(function (entry) {
+      return '<span class="log-chip ' + entry.result + '">' + entry.label + '</span>';
+    }).join('');
+  }
+
+  // Looked up from SPORTS rather than a separate hardcoded map, so a stat/shot's label and tone
+  // can't drift out of sync with the card rendering above (statBtnHtml/shotGroupHtml callers).
+  function tallyStatMeta(key) {
+    return sportConfig(DEFAULT_SPORT).tallyStats.filter(function (s) { return s.key === key; })[0];
+  }
+  function shotTypeMetaByKey(key) {
+    return sportConfig(DEFAULT_SPORT).shotTypes.filter(function (s) {
+      return s.madeKey === key || s.missKey === key;
+    })[0];
+  }
+
+  function handleStat(el) {
+    var idx = +el.dataset.idx;
+    var key = el.dataset.key;
+    var p = activeGame().players[idx];
+    var meta = tallyStatMeta(key);
+    p.log.push({ id: uid(), ts: now(), key: key, result: meta.tone, label: meta.label, removed: false });
+    recomputeFromLog(p);
+    save();
+    render();
+  }
+
+  function handleShot(el) {
+    var idx = +el.dataset.idx;
+    var key = el.dataset.key;
+    var p = activeGame().players[idx];
+    var meta = shotTypeMetaByKey(key);
+    var isMake = key.indexOf('made') === 0;
+    p.log.push({
+      id: uid(), ts: now(), key: key,
+      result: isMake ? 'make' : 'miss',
+      label: meta.label + ' ' + (isMake ? 'Make' : 'Miss'),
+      removed: false
+    });
+    recomputeFromLog(p);
+    save();
+    render();
+  }
+
+  // Tombstones the last active entry rather than removing it, so the undo itself survives a
+  // merge instead of a stale copy from another device silently bringing the stat back.
+  function handleUndo(idx) {
+    var p = activeGame().players[idx];
+    var active = activeLogEntries(p);
+    var last = active[active.length - 1];
+    if (!last) return;
+    last.removed = true;
+    recomputeFromLog(p);
+    save();
+    render();
+  }
+
+  function handleSub(idx) {
+    var p = activeGame().players[idx];
+    if (p.onCourt) {
+      // subInAt is null if the game-wide clock is currently paused (stoppage) — time's already
+      // banked in that case, nothing live to add.
+      if (p.subInAt) p.timeMs += now() - p.subInAt;
+      p.onCourt = false;
+      p.subInAt = null;
+    } else {
+      p.onCourt = true;
+      p.subInAt = now();
+    }
+    p.expanded = false; // let the bench-collapse rule take over again on the next render
+    p.metaUpdatedAt = nowIso();
+    save();
+    render();
+  }
+
+  // Tombstones rather than splicing, so the removal survives a cross-device merge (see
+  // activePlayers/mergePlayer) instead of the other device resyncing the player back in.
+  function handleRemove(idx) {
+    var g = activeGame();
+    if (activePlayers(g).length <= 1) return;
+    var p = g.players[idx];
+    if (!p || p.removed) return;
+    if (confirm('Remove ' + (p.name || 'this player') + '? This clears their stats.')) {
+      p.removed = true;
+      p.onCourt = false; // don't leave a tombstoned player holding a running clock
+      p.subInAt = null;
+      p.metaUpdatedAt = nowIso();
+      save();
+      render();
+    }
+  }
+
+  document.getElementById('addPlayerBtn').addEventListener('click', function () {
+    var players = activeGame().players;
+    var n = activePlayers(activeGame()).length + 1;
+    var name = 'Player ' + n;
+    while (hasDuplicateName(players, -1, name)) { n++; name = 'Player ' + n; }
+    var added = emptyPlayer(name, 'neutral');
+    // Start expanded: a player you just added is one you're about to name, and the bench-collapse
+    // rule would otherwise hide the name field behind an extra tap the moment anyone is on court.
+    added.expanded = true;
+    players.push(added);
+    save();
+    render();
+  });
+
+  document.getElementById('resetStatsBtn').addEventListener('click', function () {
+    if (confirm('Reset all stats for this game? This clears every player\'s numbers and the W/L result. Cannot be undone.')) {
+      var g = activeGame();
+      // Resets in place instead of rebuilding via emptyPlayer(): that minted a fresh random id for
+      // every player, so the next merge with a device still holding the old ids unioned the two
+      // sets and duplicated the whole roster. Log entries are tombstoned rather than dropped for
+      // the same reason Undo tombstones — an emptied log is just re-unioned from the other device.
+      g.players.forEach(function (p) {
+        (p.log || []).forEach(function (e) { e.removed = true; });
+        recomputeFromLog(p);
+        p.onCourt = false;
+        p.subInAt = null;
+        p.timeMs = 0;
+        p.metaUpdatedAt = nowIso();
+      });
+      g.finalized = false;
+      g.result = null;
+      g.clockRunning = true;
+      save();
+      render();
+    }
+  });
+
+  function finalizeGame(result) {
+    var g = activeGame();
+    var ts = now();
+    activePlayers(g).forEach(function (p) {
+      if (p.onCourt) {
+        if (p.subInAt) p.timeMs += ts - p.subInAt; // null if the clock was paused — already banked
+        p.onCourt = false;
+        p.subInAt = null;
+        p.metaUpdatedAt = nowIso();
+      }
+    });
+    g.finalized = true;
+    g.result = result;
+    g.clockRunning = true; // reset for next time this game screen is reopened, if ever
+    save();
+    render();
+  }
+  document.getElementById('markWinBtn').addEventListener('click', function () { finalizeGame('W'); });
+  document.getElementById('markLossBtn').addEventListener('click', function () { finalizeGame('L'); });
+
+  // Game-wide clock pause for stoppages (timeouts, dead balls, quarter breaks) — freezes every
+  // on-court player's clock together without subbing anyone out, so the on-court roster (and
+  // each player's individual Sub In/Out state) is untouched. Resuming restarts all their clocks
+  // from that moment, same as a normal sub-in would.
+  function toggleGameClock() {
+    var g = activeGame();
+    if (!g) return;
+    var ts = now();
+    var running = g.clockRunning !== false;
+    activePlayers(g).forEach(function (p) {
+      if (!p.onCourt) return;
+      if (running) {
+        // subInAt can be null here if a cross-device merge paired this player's state (paused
+        // by another device) with a game-level clockRunning that hadn't caught up yet — without
+        // this guard, ts - null coerces to ts itself, banking the full current epoch ms into
+        // timeMs permanently. handleSub/finalizeGame already guard the same way.
+        if (p.subInAt) p.timeMs += ts - p.subInAt;
+        p.subInAt = null;
+      } else {
+        p.subInAt = ts;
+      }
+      p.metaUpdatedAt = nowIso();
+    });
+    g.clockRunning = !running;
+    save();
+    render();
+  }
+  document.getElementById('clockToggleBtn').addEventListener('click', toggleGameClock);
+
+  document.getElementById('gameNameInput').addEventListener('input', function (ev) {
+    var g = activeGame();
+    if (g) { g.name = ev.target.value; save(); }
+  });
+
+  document.getElementById('gameDateInput').addEventListener('change', function (ev) {
+    var g = activeGame();
+    if (!g || !ev.target.value) return;
+    var d = new Date(ev.target.value);
+    if (!isNaN(d.getTime())) {
+      g.createdAt = d.toISOString();
+      save();
+    }
+  });
+
+  function scoreInputHandler(field) {
+    return function (ev) {
+      var g = activeGame();
+      if (!g) return;
+      g[field] = ev.target.value === '' ? null : Math.max(0, parseInt(ev.target.value, 10) || 0);
+      save();
+    };
+  }
+  document.getElementById('teamScoreInput').addEventListener('input', scoreInputHandler('teamScore'));
+  document.getElementById('oppScoreInput').addEventListener('input', scoreInputHandler('oppScore'));
+
+  document.getElementById('trackerBackBtn').addEventListener('click', function () {
+    state.nav.screen = 'season';
+    save();
+    render();
+  });
+
+  setInterval(function () {
+    if (state.nav.screen !== 'tracker') return;
+    var g = activeGame();
+    if (!g || !activePlayers(g).some(function (p) { return p.onCourt; })) return;
+    g.players.forEach(function (p, idx) { // raw index: data-playtime is set from the same index
+      if (p.removed) return;
+      var el = document.querySelector('[data-playtime="' + idx + '"]');
+      if (el) el.textContent = formatTime(currentPlayTime(p));
+    });
+  }, 1000);
+
+  // Fallback poll for networks or proxies that block event streams. When the stream is up this
+  // backs off to a slow safety net; when it isn't, it stays at the original 20s cadence so a
+  // blocked stream degrades to exactly the old behaviour rather than to nothing.
+  setInterval(function () {
+    if (document.visibilityState !== 'visible') return;
+    var due = streamConnected ? 60000 : 20000;
+    if (Date.now() - lastSyncAt >= due) resyncWithServer();
+  }, 5000);
+
+  // Tiles and list rows are divs (they contain their own rename/delete buttons, and nested
+  // buttons are invalid HTML), so they need Enter/Space wired up by hand to match role="button".
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    var el = ev.target;
+    if (!el || !el.matches || !el.matches('[role="button"][tabindex]')) return;
+    ev.preventDefault();
+    el.click();
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>
