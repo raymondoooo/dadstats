@@ -1,12 +1,15 @@
 # DadStats
 
-> **Pre-release.** This started as a personal basketball tracker and is being turned into a
-> single-container, self-hostable app anyone can `docker run`. Basketball is the only sport
-> implemented so far — the stat schema is config-driven (`SPORTS` in `public/index.html`), so
-> other sports are additive work rather than a rewrite.
+> **Pre-release.** Being turned into a single-container, self-hostable app anyone can
+> `docker run`.
 
 A stat tracker built for one job: standing at a gym or field, phone in hand, logging what happens
 within a couple of seconds of it happening — then reviewing it later as a season.
+
+**Seven sports:** basketball, soccer, hockey, field hockey, lacrosse, volleyball, and
+baseball/softball. The sport is set per *season*, so one kid can play basketball in the winter
+and soccer in the spring under the same name and the same win-loss record — each season tracks
+its own stats and shows its own averages table.
 
 Built for scoring from the stands, including **two parents scoring the same game from two phones**
 — taps from both merge instead of one overwriting the other.
@@ -94,10 +97,14 @@ Two more rules keep the averages honest:
 
 Each player card carries:
 
-- **Points** — derived, never entered (FT×1 + 2PT×2 + 3PT×3).
-- **Six action buttons** — Sub In/Out (with a live clock inside it), R, A, S, B, TO.
-- **Three shot rows** — 2PT / 3PT / FT, each a Make and a Miss button with a running percentage.
-- **Undo last** and an expandable shot log.
+- **A headline number** — derived, never entered. Points in basketball (FT×1 + 2PT×2 + 3PT×3),
+  goals in soccer, points as goals+assists in hockey and lacrosse, kills in volleyball, hits in
+  baseball.
+- **Tally buttons** — one tap each. R/A/S/B/TO in basketball, A/SV/TK/F in soccer, and so on.
+- **Make/miss rows** — with a running percentage, labelled for the sport: Make/Miss for a
+  basketball shot, Goal/Miss for soccer, Kill/Error for a volleyball attack.
+- **Sub In/Out** with a live clock — only for sports that track floor time.
+- **Undo last** and an expandable log.
 
 **On-court players sort to the top** and get an accent ring plus an `ON` pill. Once anyone is on
 the floor, everyone else collapses to a one-line bench strip (name, points, minutes, Sub In) —
@@ -126,6 +133,7 @@ state
     ├── name, id
     ├── activeSeasonId
     └── seasons[]
+        ├── sport            which stat schema this season uses (see Sports)
         └── games[]
             ├── name, createdAt (the game's date/time — editable), updatedAt
             ├── finalized, result ('W' | 'L' | null)
@@ -133,7 +141,7 @@ state
             └── players[]
                 ├── id, name, tone, removed, metaUpdatedAt
                 ├── onCourt, subInAt, timeMs
-                ├── made1/miss1 … made3/miss3, reb, ast, stl, blk, to   ← derived, see below
+                ├── the season's sport's stat keys                       ← derived, see below
                 └── log[]  { id, ts, key, result, label, removed }
 ```
 
@@ -153,6 +161,31 @@ Three rules matter more than the rest:
    rather than applying silently, because unnamed kids in different games can legitimately share a
    placeholder like "Player 2", and it skips any game where the new name is already taken by
    someone else. Renames stay within the season — a name can belong to a different kid next year.
+
+---
+
+## Sports
+
+Every sport-specific detail lives in one `SPORTS` object in `public/index.html`: which tally
+buttons exist, which make/miss pairs exist and what their faces say, what the card's headline
+number is, which columns the Season Averages table shows, and whether the sport tracks time on
+the field at all. Nothing outside that object hardcodes a stat name, so adding a sport is adding
+an entry.
+
+**The sport belongs to the season, not the kid.** A season's sport is chosen when it's created
+and can't be changed afterwards — the games under it are scored with that schema, and changing
+it would leave every existing card holding counters the new schema doesn't recognise. A kid who
+plays two sports has two seasons.
+
+Seasons created before multi-sport, or arriving from a device running older code, are treated as
+basketball.
+
+Not every sport fits this shape. The model is *a game, with players, accumulating tap-counters
+over time* — which covers invasion sports and, near enough, baseball. It does not cover sports
+whose results are measurements rather than counts: swimming and track (times, distances), golf
+(strokes against par), bowling (frames, with scoring that carries forward). Those need a
+different mode, and forcing them in here would produce a dropdown entry that's useless at the
+poolside.
 
 ---
 

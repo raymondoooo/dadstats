@@ -1,9 +1,14 @@
 # CLAUDE.md — dadstats
 
 ## What this is
-A self-hosted stat tracker distributed as a single Docker image. Basketball is the only sport
-wired up so far; the stat schema is config-driven (see `SPORTS` in `public/index.html`), so a
-second sport is additive work rather than a rewrite.
+A self-hosted stat tracker distributed as a single Docker image. Seven team sports, all driven
+by one `SPORTS` config object in `public/index.html` — nothing outside it hardcodes a stat name,
+so adding a sport is adding an entry.
+
+**Sport lives on the season, not the profile**, so a kid can play two sports under one name. It's
+fixed at creation: changing it would strand every existing card's counters outside the new
+schema. Measurement sports (swimming, track, golf, bowling) do NOT fit this model — they need a
+results mode, not another SPORTS entry. See README § Sports.
 
 **`README.md` is the real documentation** — architecture, the sync design, the data model, and
 the rules that keep merges non-destructive. Read it before changing anything in
@@ -23,7 +28,8 @@ account, which is why `admin.js` checks for them at creation.
 
 ## Tests
 `test/` drives a running instance and needs `APP_URL` + `ADMIN_PASSWORD` (see `test/README.md`).
-`test/sync-check.js` is the one that matters — it proves the invariant below.
+`sync-check.js` proves the invariant below; `sport-check.js` proves two sports coexist under one
+kid. Run both after touching the stat schema.
 
 ## The one thing to get right
 Stat counters are **derived from the event log, never trusted as independent counters**, and

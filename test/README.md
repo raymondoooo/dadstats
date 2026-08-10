@@ -1,6 +1,6 @@
 # Tests
 
-Three end-to-end browser checks. They drive a **running instance** over HTTP — there is no unit
+Four end-to-end browser checks. They drive a **running instance** over HTTP — there is no unit
 test layer, because nearly all the logic lives in one browser-side file.
 
 Each test provisions its own throwaway family through the admin API (`helpers.js`), so runs never
@@ -29,9 +29,10 @@ export APP_URL=http://localhost:3208 ADMIN_PASSWORD=test-admin-pw
 node test/sync-check.js
 node test/ui-check.js
 node test/admin-check.js
+node test/sport-check.js
 ```
 
-All three exit non-zero on failure and drop screenshots in `test/screenshots/`.
+All four exit non-zero on failure and drop screenshots in `test/screenshots/`.
 
 ## What each one covers
 
@@ -58,3 +59,11 @@ confirms that password actually signs that family in. This is the gate everythin
 on: if family creation breaks, nobody can get an account at all.
 
 Run it after touching `server/admin.js`, `server/auth.js`, or `public/admin.html`.
+
+**`sport-check.js`** — creates a soccer season alongside the default basketball one under the
+same kid, scores a soccer game, and asserts the tracker buttons, the card's headline number and
+the Season Averages columns all use soccer's schema while the basketball season still uses
+basketball's. That combination is the multi-sport feature: the sport belongs to the season.
+
+Run it after touching `SPORTS`, `freshSeason`, `sportOfSeason`, or anything that threads `sport`
+through the tracker or averages.

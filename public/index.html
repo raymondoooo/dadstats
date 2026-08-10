@@ -166,6 +166,33 @@
     border-radius: 12px;
     cursor: pointer;
   }
+  .season-form {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px; margin-top: 4px;
+  }
+  .season-form label {
+    display: block; font-size: 0.68rem; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--ink-muted); margin-bottom: 4px;
+  }
+  .season-form input, .season-form select {
+    width: 100%; padding: 10px 11px; font-size: 1rem; font-family: inherit;
+    border: 1px solid var(--border); border-radius: 9px;
+    background: var(--surface-raised); color: var(--ink); margin-bottom: 10px;
+  }
+  .season-form-hint { color: var(--ink-muted); font-size: 0.7rem; margin-bottom: 12px; }
+  .season-form-actions { display: flex; gap: 8px; }
+  .season-form-actions button {
+    font: inherit; font-weight: 700; font-size: 0.8rem; cursor: pointer;
+    border: none; border-radius: 9px; padding: 10px 14px;
+    background: var(--accent); color: var(--accent-ink);
+  }
+  .season-form-actions button.ghost {
+    background: transparent; color: var(--ink-muted); border: 1px solid var(--border);
+  }
+  .sport-chip {
+    font-size: 0.66rem; padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+    background: rgba(36, 28, 18, 0.06); color: var(--ink-muted);
+  }
   .add-tile:hover { border-color: var(--accent); color: var(--accent); }
 
   .schedule-btn {
@@ -683,6 +710,19 @@
     <h2 class="screen-title" id="profileTitle"></h2>
     <div class="season-list" id="seasonList"></div>
     <button class="add-tile" id="addSeasonBtn">+ Add Season</button>
+    <!-- Inline rather than a modal: a season needs a name *and* a sport, which prompt() can't
+         collect in one step, and the app has no overlay machinery to justify adding for this. -->
+    <form class="season-form" id="seasonForm" hidden>
+      <label for="seasonNameInput">Season name</label>
+      <input type="text" id="seasonNameInput" placeholder="e.g. Fall 2026" />
+      <label for="seasonSportInput">Sport</label>
+      <select id="seasonSportInput"></select>
+      <div class="season-form-hint">The sport sets which stats you track. It can't be changed later.</div>
+      <div class="season-form-actions">
+        <button type="submit">Create season</button>
+        <button type="button" class="ghost" id="seasonFormCancel">Cancel</button>
+      </div>
+    </form>
   </div>
 
   <div class="screen" id="seasonView">
@@ -763,16 +803,33 @@
   // sorts as "oldest", so the first real edit after migration naturally takes precedence.
   var LEGACY_META_TS = '1970-01-01T00:00:00.000Z';
 
-  // The stat schema for a sport: which tap-to-count buttons exist (tallyStats) and which
-  // make/miss pairs exist and how many points each make is worth (shotTypes). Every place that
-  // used to hardcode basketball's fields (emptyPlayer, recomputeFromLog, points, season
-  // averages, the tracker card) now derives them from here instead, so a second sport is "add a
-  // SPORTS entry" rather than another pass through those functions. Only basketball is wired up
-  // today — profiles carry a `sport` field for forward compatibility, but nothing sets it to
-  // anything else yet, and there's no picker UI.
+  // ---- Sport definitions ----
+  //
+  // Everything sport-specific lives here. Nothing below this block hardcodes a stat name, so
+  // adding a sport is adding an entry rather than another pass through the tracker, the season
+  // averages, and the merge code.
+  //
+  //   tallyStats  simple tap-to-count buttons.        { key, label, tone }
+  //   shotTypes   paired make/miss buttons.           { madeKey, missKey, label, makeLabel,
+  //                                                     missLabel, value }
+  //               `value` is how much a make adds to a points-style primary; omit for sports
+  //               where makes aren't worth points.
+  //   primary     the big number on the player card.  { label, compute(p) }
+  //   columns     the Season Averages table.          [{ label, get(a) }]  — `a` is the
+  //               per-player aggregate built by seasonAverages(): every stat key summed, plus
+  //               gp and timeMs.
+  //   usesClock   false hides Sub In/Out, the game clock and every minutes-played readout, for
+  //               sports where floor time isn't a thing anyone tracks.
+  //   summary     optional custom card subtitle; the generic one lists each shot type.
+  //
+  // A note on why sports can't just share stat keys: each sport's keys are the complete set of
+  // counters a card carries, and recomputeFromLog zeroes exactly that set before replaying the
+  // log. A key that isn't in the sport's schema would never be recomputed and would drift.
   var SPORTS = {
     basketball: {
       label: 'Basketball',
+      icon: '🏀',
+      usesClock: true,
       tallyStats: [
         { key: 'reb', label: 'R', tone: 'make' },
         { key: 'ast', label: 'A', tone: 'make' },
@@ -784,10 +841,216 @@
         { madeKey: 'made2', missKey: 'miss2', label: '2PT', value: 2 },
         { madeKey: 'made3', missKey: 'miss3', label: '3PT', value: 3 },
         { madeKey: 'made1', missKey: 'miss1', label: 'FT', value: 1 }
+      ],
+      primary: { label: 'points', compute: shotValueTotal },
+      // FG aggregating 2s and 3s is a basketball convention the generic summary can't infer.
+      summary: function (p) {
+        var madeFG = p.made2 + p.made3;
+        var attFG = (p.made2 + p.miss2) + (p.made3 + p.miss3);
+        var att1 = p.made1 + p.miss1;
+        return [madeFG + '/' + attFG + ' FG', pct(madeFG, attFG), p.made1 + '/' + att1 + ' FT'];
+      },
+      columns: [
+        { label: 'PPG', get: function (a) { return avg(a.pts, a.gp); } },
+        { label: 'RPG', get: function (a) { return avg(a.reb, a.gp); } },
+        { label: 'APG', get: function (a) { return avg(a.ast, a.gp); } },
+        { label: 'SPG', get: function (a) { return avg(a.stl, a.gp); } },
+        { label: 'BPG', get: function (a) { return avg(a.blk, a.gp); } },
+        { label: 'TOPG', get: function (a) { return avg(a.to, a.gp); } },
+        { label: 'FG%', get: function (a) { return pct(a.made2 + a.made3, a.made2 + a.miss2 + a.made3 + a.miss3); } },
+        { label: '3P%', get: function (a) { return pct(a.made3, a.made3 + a.miss3); } },
+        { label: 'FT%', get: function (a) { return pct(a.made1, a.made1 + a.miss1); } }
+      ]
+    },
+
+    soccer: {
+      label: 'Soccer',
+      icon: '⚽',
+      usesClock: true,
+      tallyStats: [
+        { key: 'ast', label: 'A', tone: 'make' },
+        { key: 'sv', label: 'SV', tone: 'make' },
+        { key: 'tkl', label: 'TK', tone: 'make' },
+        { key: 'foul', label: 'F', tone: 'miss' }
+      ],
+      shotTypes: [
+        { madeKey: 'goals', missKey: 'shotsOff', label: 'Shot', makeLabel: 'Goal', missLabel: 'Miss', value: 1 }
+      ],
+      primary: { label: 'goals', compute: shotValueTotal },
+      columns: [
+        { label: 'G', get: function (a) { return a.goals; } },
+        { label: 'G/G', get: function (a) { return avg(a.goals, a.gp); } },
+        { label: 'A', get: function (a) { return a.ast; } },
+        { label: 'SH', get: function (a) { return a.goals + a.shotsOff; } },
+        { label: 'SH%', get: function (a) { return pct(a.goals, a.goals + a.shotsOff); } },
+        { label: 'SV', get: function (a) { return a.sv; } },
+        { label: 'TK', get: function (a) { return a.tkl; } },
+        { label: 'F', get: function (a) { return a.foul; } }
+      ]
+    },
+
+    hockey: {
+      label: 'Hockey',
+      icon: '🏒',
+      usesClock: true,
+      tallyStats: [
+        { key: 'ast', label: 'A', tone: 'make' },
+        { key: 'sv', label: 'SV', tone: 'make' },
+        { key: 'blk', label: 'BK', tone: 'make' },
+        { key: 'pen', label: 'PEN', tone: 'miss' }
+      ],
+      shotTypes: [
+        { madeKey: 'goals', missKey: 'shotsOff', label: 'Shot', makeLabel: 'Goal', missLabel: 'Miss', value: 1 }
+      ],
+      // Hockey "points" are goals + assists, not a shot value — hence its own compute.
+      primary: { label: 'points', compute: function (p) { return p.goals + p.ast; } },
+      columns: [
+        { label: 'PTS', get: function (a) { return a.goals + a.ast; } },
+        { label: 'G', get: function (a) { return a.goals; } },
+        { label: 'A', get: function (a) { return a.ast; } },
+        { label: 'SH', get: function (a) { return a.goals + a.shotsOff; } },
+        { label: 'SH%', get: function (a) { return pct(a.goals, a.goals + a.shotsOff); } },
+        { label: 'SV', get: function (a) { return a.sv; } },
+        { label: 'BK', get: function (a) { return a.blk; } },
+        { label: 'PEN', get: function (a) { return a.pen; } }
+      ]
+    },
+
+    fieldhockey: {
+      label: 'Field Hockey',
+      icon: '🏑',
+      usesClock: true,
+      tallyStats: [
+        { key: 'ast', label: 'A', tone: 'make' },
+        { key: 'sv', label: 'SV', tone: 'make' },
+        { key: 'tkl', label: 'TK', tone: 'make' },
+        { key: 'foul', label: 'F', tone: 'miss' }
+      ],
+      shotTypes: [
+        { madeKey: 'goals', missKey: 'shotsOff', label: 'Shot', makeLabel: 'Goal', missLabel: 'Miss', value: 1 }
+      ],
+      primary: { label: 'goals', compute: shotValueTotal },
+      columns: [
+        { label: 'G', get: function (a) { return a.goals; } },
+        { label: 'G/G', get: function (a) { return avg(a.goals, a.gp); } },
+        { label: 'A', get: function (a) { return a.ast; } },
+        { label: 'SH', get: function (a) { return a.goals + a.shotsOff; } },
+        { label: 'SH%', get: function (a) { return pct(a.goals, a.goals + a.shotsOff); } },
+        { label: 'SV', get: function (a) { return a.sv; } },
+        { label: 'TK', get: function (a) { return a.tkl; } },
+        { label: 'F', get: function (a) { return a.foul; } }
+      ]
+    },
+
+    lacrosse: {
+      label: 'Lacrosse',
+      icon: '🥍',
+      usesClock: true,
+      tallyStats: [
+        { key: 'ast', label: 'A', tone: 'make' },
+        { key: 'gb', label: 'GB', tone: 'make' },
+        { key: 'sv', label: 'SV', tone: 'make' },
+        { key: 'cto', label: 'CT', tone: 'make' },
+        { key: 'to', label: 'TO', tone: 'miss' }
+      ],
+      shotTypes: [
+        { madeKey: 'goals', missKey: 'shotsOff', label: 'Shot', makeLabel: 'Goal', missLabel: 'Miss', value: 1 }
+      ],
+      primary: { label: 'points', compute: function (p) { return p.goals + p.ast; } },
+      columns: [
+        { label: 'PTS', get: function (a) { return a.goals + a.ast; } },
+        { label: 'G', get: function (a) { return a.goals; } },
+        { label: 'A', get: function (a) { return a.ast; } },
+        { label: 'SH%', get: function (a) { return pct(a.goals, a.goals + a.shotsOff); } },
+        { label: 'GB', get: function (a) { return a.gb; } },
+        { label: 'CT', get: function (a) { return a.cto; } },
+        { label: 'SV', get: function (a) { return a.sv; } },
+        { label: 'TO', get: function (a) { return a.to; } }
+      ]
+    },
+
+    volleyball: {
+      label: 'Volleyball',
+      icon: '🏐',
+      // Rotations, not substitutions — nobody tracks a volleyball player's minutes.
+      usesClock: false,
+      tallyStats: [
+        { key: 'dig', label: 'D', tone: 'make' },
+        { key: 'blk', label: 'BLK', tone: 'make' },
+        { key: 'ast', label: 'A', tone: 'make' }
+      ],
+      shotTypes: [
+        { madeKey: 'kills', missKey: 'attackErr', label: 'Attack', makeLabel: 'Kill', missLabel: 'Error', value: 1 },
+        { madeKey: 'aces', missKey: 'serveErr', label: 'Serve', makeLabel: 'Ace', missLabel: 'Error' }
+      ],
+      primary: { label: 'kills', compute: shotValueTotal },
+      columns: [
+        { label: 'K', get: function (a) { return a.kills; } },
+        { label: 'K/G', get: function (a) { return avg(a.kills, a.gp); } },
+        { label: 'K%', get: function (a) { return pct(a.kills, a.kills + a.attackErr); } },
+        { label: 'ACE', get: function (a) { return a.aces; } },
+        { label: 'SE', get: function (a) { return a.serveErr; } },
+        { label: 'D', get: function (a) { return a.dig; } },
+        { label: 'BLK', get: function (a) { return a.blk; } },
+        { label: 'A', get: function (a) { return a.ast; } }
+      ]
+    },
+
+    baseball: {
+      label: 'Baseball / Softball',
+      icon: '⚾',
+      usesClock: false,
+      // Hit types are separate tallies rather than one hit/out shot pair, so a home run is a
+      // single tap instead of "Hit" followed by "HR" — double-entry would inflate the hit count.
+      // Batting only; pitching is a genuinely different stat sheet.
+      tallyStats: [
+        { key: 'h1b', label: '1B', tone: 'make' },
+        { key: 'h2b', label: '2B', tone: 'make' },
+        { key: 'h3b', label: '3B', tone: 'make' },
+        { key: 'hr', label: 'HR', tone: 'make' },
+        { key: 'bb', label: 'BB', tone: 'make' },
+        { key: 'rbi', label: 'RBI', tone: 'make' },
+        { key: 'run', label: 'R', tone: 'make' },
+        { key: 'sb', label: 'SB', tone: 'make' },
+        { key: 'out', label: 'OUT', tone: 'miss' },
+        { key: 'so', label: 'K', tone: 'miss' }
+      ],
+      shotTypes: [],
+      primary: { label: 'hits', compute: hitTotal },
+      columns: [
+        { label: 'AB', get: function (a) { return hitTotal(a) + a.out + a.so; } },
+        { label: 'H', get: function (a) { return hitTotal(a); } },
+        { label: 'AVG', get: function (a) { return rate(hitTotal(a), hitTotal(a) + a.out + a.so); } },
+        { label: '2B', get: function (a) { return a.h2b; } },
+        { label: '3B', get: function (a) { return a.h3b; } },
+        { label: 'HR', get: function (a) { return a.hr; } },
+        { label: 'RBI', get: function (a) { return a.rbi; } },
+        { label: 'R', get: function (a) { return a.run; } },
+        { label: 'BB', get: function (a) { return a.bb; } },
+        { label: 'K', get: function (a) { return a.so; } },
+        { label: 'SB', get: function (a) { return a.sb; } }
       ]
     }
   };
+
+  // Shared primary/column helpers. Declared as functions so they hoist above SPORTS.
+  // A player card carries no record of its own sport — the season owns that — so the config is
+  // always passed in rather than looked up from the player.
+  function shotValueTotal(p, cfg) {
+    return cfg.shotTypes.reduce(function (sum, s) {
+      return sum + (s.value ? p[s.madeKey] * s.value : 0);
+    }, 0);
+  }
+  function hitTotal(x) { return x.h1b + x.h2b + x.h3b + x.hr; }
+  // Baseball convention: three decimals, no leading zero, and a dash rather than .000 for
+  // nobody who has batted.
+  function rate(made, attempts) {
+    if (!attempts) return '—';
+    return (made / attempts).toFixed(3).replace(/^0/, '');
+  }
+
   var DEFAULT_SPORT = 'basketball';
+  var SPORT_KEYS = Object.keys(SPORTS);
   function sportConfig(sport) {
     return SPORTS[sport] || SPORTS[DEFAULT_SPORT];
   }
@@ -799,7 +1062,7 @@
     return keys;
   }
 
-  function emptyPlayer(name, tone) {
+  function emptyPlayer(name, tone, sport) {
     var p = {
       id: uid(), name: name, tone: tone,
       onCourt: false, subInAt: null, timeMs: 0,
@@ -807,7 +1070,7 @@
       removed: false,
       log: [], logOpen: false
     };
-    statFieldKeys(DEFAULT_SPORT).forEach(function (k) { p[k] = 0; });
+    statFieldKeys(sport).forEach(function (k) { p[k] = 0; });
     return p;
   }
 
@@ -815,8 +1078,8 @@
   // that predate this field (position-derived, so two devices migrating the same old JSON
   // independently land on the same id instead of minting different random ones and creating
   // permanent duplicates the next time they sync).
-  function withDefaults(p, gameId, idx) {
-    var merged = Object.assign(emptyPlayer(p.name, p.tone), p);
+  function withDefaults(p, gameId, idx, sport) {
+    var merged = Object.assign(emptyPlayer(p.name, p.tone, sport), p);
     if (!p.id) merged.id = 'legacy-p-' + gameId + '-' + idx;
     if (!p.metaUpdatedAt) merged.metaUpdatedAt = LEGACY_META_TS;
     merged.removed = p.removed || false;
@@ -892,24 +1155,34 @@
     });
   }
 
-  function freshSeason(name) {
-    return { id: uid(), name: name, games: [] };
+  // The sport lives on the season, not the profile: one kid plays basketball in the winter and
+  // soccer in the spring, and both belong under the same name with the same win-loss history.
+  // Season Averages are already computed per season, so the stat schema lines up with the level
+  // that owns it.
+  function freshSeason(name, sport) {
+    return { id: uid(), name: name, sport: sport || DEFAULT_SPORT, games: [] };
   }
 
-  function freshGame(name, profileName) {
+  function freshGame(name, profileName, sport) {
     return {
       id: uid(), name: name, createdAt: new Date().toISOString(), updatedAt: nowIso(),
       finalized: false, result: null, teamScore: null, oppScore: null,
-      players: [emptyPlayer(profileName, 'accent')]
+      players: [emptyPlayer(profileName, 'accent', sport)]
     };
   }
 
-  function freshProfile(name) {
-    var season = freshSeason('Season 1');
-    // Forward-looking only: nothing reads profile.sport yet (every stat function below still
-    // uses DEFAULT_SPORT directly), and there's no picker UI. It's here so a future second sport
-    // is "add a SPORTS entry + wire up this field," not another data-model migration.
-    return { id: uid(), name: name, sport: DEFAULT_SPORT, seasons: [season], activeSeasonId: season.id };
+  function freshProfile(name, sport) {
+    var season = freshSeason('Season 1', sport);
+    return { id: uid(), name: name, seasons: [season], activeSeasonId: season.id };
+  }
+
+  // Which stat schema a game is scored with. Games don't carry a sport of their own — they
+  // inherit the season's, so a season can never contain games scored under two schemas.
+  function sportOfSeason(season) {
+    return (season && season.sport) || DEFAULT_SPORT;
+  }
+  function activeSport() {
+    return sportOfSeason(activeGameSeason());
   }
 
   // `provisional` marks a state this device invented out of nothing (empty cache / unreadable
@@ -1002,13 +1275,18 @@
       if (!pr.seasons || pr.seasons.length === 0) pr.seasons = [freshSeason('Season 1')];
       pr.seasons.forEach(function (s) {
         if (!s.games) s.games = [];
+        // Every season that predates multi-sport was basketball. Backfilling here rather than in
+        // a migration step means it also covers a season arriving from a device still running
+        // older code, which would otherwise render with no stat buttons at all.
+        if (!s.sport || !SPORTS[s.sport]) s.sport = DEFAULT_SPORT;
+        var seasonSport = s.sport;
         s.games.forEach(function (g) {
-          g.players = (g.players || []).map(function (p, idx) { return withDefaults(p, g.id, idx); });
+          g.players = (g.players || []).map(function (p, idx) { return withDefaults(p, g.id, idx, seasonSport); });
           // Deterministic id (not a random uid) for the same reason as the legacy backfill above:
           // two devices independently seeding a roster-less game must land on the *same* player,
           // or the next merge unions them into two identical players named after the profile.
           if (g.players.length === 0) {
-            var seeded = emptyPlayer(pr.name, 'accent');
+            var seeded = emptyPlayer(pr.name, 'accent', seasonSport);
             seeded.id = 'seed-p-' + g.id;
             seeded.metaUpdatedAt = LEGACY_META_TS; // never beat a real edit from the other device
             g.players = [seeded];
@@ -1242,8 +1520,11 @@
   // that's what makes the log union above sufficient on its own: two devices tapping different
   // stats for the same player at the same time end up with the union of both taps, not whichever
   // device's counter happened to save last.
-  function recomputeFromLog(p) {
-    var keys = statFieldKeys(DEFAULT_SPORT);
+  // `sport` decides which counters get zeroed and replayed. Passing the wrong one would leave a
+  // stat the schema doesn't know about frozen at whatever value it happened to hold, so the
+  // season's sport is threaded all the way down from the merge rather than assumed.
+  function recomputeFromLog(p, sport) {
+    var keys = statFieldKeys(sport);
     keys.forEach(function (k) { p[k] = 0; });
     activeLogEntries(p).forEach(function (e) { if (p[e.key] !== undefined) p[e.key]++; });
   }
@@ -1251,12 +1532,12 @@
   // Name/tone/on-court/played-time aren't event-sourced (nobody taps "sub in" for the same
   // player from two devices at once in practice) — those still use simple last-writer-wins,
   // scoped to just this player via metaUpdatedAt instead of the whole game.
-  function mergePlayer(current, incoming) {
+  function mergePlayer(current, incoming, sport) {
     var currentMeta = current.metaUpdatedAt || LEGACY_META_TS;
     var incomingMeta = incoming.metaUpdatedAt || LEGACY_META_TS;
     var base = JSON.parse(JSON.stringify(incomingMeta > currentMeta ? incoming : current));
     base.log = mergeLogs(current.log, incoming.log);
-    recomputeFromLog(base);
+    recomputeFromLog(base, sport);
     // Deletion wins over not-deleted regardless of which side is newer — same rule as a tombstoned
     // log entry, so removing a player on either device sticks instead of being undone by a resync
     // from a device that hasn't heard about the removal yet.
@@ -1264,12 +1545,12 @@
     return base;
   }
 
-  function mergePlayers(currentPlayers, incomingPlayers) {
+  function mergePlayers(currentPlayers, incomingPlayers, sport) {
     var byId = {};
     var order = [];
     (currentPlayers || []).forEach(function (p) { byId[p.id] = p; order.push(p.id); });
     (incomingPlayers || []).forEach(function (p) {
-      if (byId[p.id]) byId[p.id] = mergePlayer(byId[p.id], p);
+      if (byId[p.id]) byId[p.id] = mergePlayer(byId[p.id], p, sport);
       else { byId[p.id] = p; order.push(p.id); }
     });
     return order.map(function (id) { return byId[id]; });
@@ -1282,6 +1563,12 @@
   // side's players wholesale, so concurrent stat entry on two devices for the same live game
   // no longer clobbers either device's taps.
   function mergeGamesInto(existingSeason, incomingSeason) {
+    // A season's sport is chosen once, when it's created, and there is no UI to change it — so
+    // rather than a last-writer-wins race, whichever side actually has one wins. That also
+    // repairs a season arriving from a device running pre-multi-sport code, which carries none.
+    if (!existingSeason.sport && incomingSeason.sport) existingSeason.sport = incomingSeason.sport;
+    var sport = sportOfSeason(existingSeason);
+
     var byId = {};
     existingSeason.games.forEach(function (g) { byId[g.id] = g; });
     incomingSeason.games.forEach(function (g) {
@@ -1295,7 +1582,7 @@
       var incomingTime = g.updatedAt ? new Date(g.updatedAt).getTime() : 0;
       var winner = incomingTime > currentTime ? g : current;
       var merged = JSON.parse(JSON.stringify(winner));
-      merged.players = mergePlayers(current.players, g.players);
+      merged.players = mergePlayers(current.players, g.players, sport);
       existingSeason.games[existingSeason.games.indexOf(current)] = merged;
       byId[g.id] = merged;
     });
@@ -1495,7 +1782,8 @@
     return activeLogEntries(p).length > 0 || p.timeMs > 0 || p.onCourt;
   }
   function seasonAverages(season) {
-    var cfg = sportConfig(DEFAULT_SPORT);
+    var sport = sportOfSeason(season);
+    var cfg = sportConfig(sport);
     var byName = {};
     // Key on the same trimmed/lowercased identity hasDuplicateName uses, not the raw string —
     // otherwise a name typed with different casing/whitespace in two games silently splits one
@@ -1520,12 +1808,14 @@
           a.gameIds[g.id] = true;
           a.gp++;
         }
-        a.pts += points(p);
+        a.pts += points(p, sport);
         cfg.tallyStats.forEach(function (s) { a[s.key] += p[s.key]; });
         cfg.shotTypes.forEach(function (s) { a[s.madeKey] += p[s.madeKey]; a[s.missKey] += p[s.missKey]; });
         a.timeMs += p.timeMs;
       });
     });
+    // Sorted by the sport's primary stat per game — points in basketball, goals in soccer,
+    // hits in baseball — so the leaderboard reads correctly whatever is being tracked.
     return Object.keys(byName).map(function (name) { return byName[name]; }).sort(function (x, y) { return (y.pts / y.gp) - (x.pts / x.gp); });
   }
 
@@ -1569,10 +1859,15 @@
   var dateEl = document.getElementById('gameDate');
   dateEl.textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
 
-  function points(p) {
-    return sportConfig(DEFAULT_SPORT).shotTypes.reduce(function (sum, s) {
-      return sum + p[s.madeKey] * s.value;
-    }, 0);
+  // The sport's headline number for one player — points in basketball, goals in soccer, hits in
+  // baseball. Each sport supplies its own compute because the rule genuinely differs: hockey and
+  // lacrosse count goals plus assists, basketball weights shots by value.
+  function points(p, sport) {
+    var cfg = sportConfig(sport);
+    return cfg.primary.compute(p, cfg);
+  }
+  function primaryLabel(sport) {
+    return sportConfig(sport).primary.label;
   }
   function pct(made, attempts) {
     if (attempts === 0) return '—';
@@ -1682,6 +1977,11 @@
       var gcount = s.games.length;
       return '<div class="list-row" role="button" tabindex="0" data-openseason="' + s.id + '">' +
         '<span class="row-name">' + escapeHtml(s.name) + '</span>' +
+        // The sport is the difference between two otherwise identical-looking seasons, so it
+        // shows here rather than only inside.
+        '<span class="sport-chip" title="' + escapeHtml(sportConfig(sportOfSeason(s)).label) + '">' +
+          sportConfig(sportOfSeason(s)).icon + ' ' + escapeHtml(sportConfig(sportOfSeason(s)).label) +
+        '</span>' +
         recordHtml(seasonRecord(s)) +
         '<span class="row-meta">' + gcount + ' game' + (gcount === 1 ? '' : 's') + '</span>' +
         '<div class="row-actions">' +
@@ -1730,15 +2030,46 @@
     render();
   }
 
-  document.getElementById('addSeasonBtn').addEventListener('click', function () {
-    var name = prompt('Name the new season (e.g. "Fall 2026"):');
-    if (name && name.trim()) {
-      var pr = activeProfile();
-      var season = freshSeason(name.trim());
-      pr.seasons.push(season);
-      save();
-      render();
-    }
+  var seasonForm = document.getElementById('seasonForm');
+  var seasonNameInput = document.getElementById('seasonNameInput');
+  var seasonSportInput = document.getElementById('seasonSportInput');
+  var addSeasonBtn = document.getElementById('addSeasonBtn');
+
+  SPORT_KEYS.forEach(function (key) {
+    var opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = SPORTS[key].icon + '  ' + SPORTS[key].label;
+    seasonSportInput.appendChild(opt);
+  });
+
+  function closeSeasonForm() {
+    seasonForm.hidden = true;
+    addSeasonBtn.hidden = false;
+    seasonNameInput.value = '';
+  }
+
+  addSeasonBtn.addEventListener('click', function () {
+    seasonForm.hidden = false;
+    addSeasonBtn.hidden = true;
+    // Defaults to the sport of the profile's most recent season — a kid who plays one sport
+    // shouldn't have to re-pick it every year.
+    var pr = activeProfile();
+    var last = pr.seasons[pr.seasons.length - 1];
+    seasonSportInput.value = sportOfSeason(last);
+    seasonNameInput.focus();
+  });
+
+  document.getElementById('seasonFormCancel').addEventListener('click', closeSeasonForm);
+
+  seasonForm.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var name = seasonNameInput.value.trim();
+    if (!name) { seasonNameInput.focus(); return; }
+    var pr = activeProfile();
+    pr.seasons.push(freshSeason(name, seasonSportInput.value));
+    closeSeasonForm();
+    save();
+    render();
   });
 
   // ---------- Season screen (games list) ----------
@@ -1749,20 +2080,25 @@
       container.innerHTML = '';
       return;
     }
+    // Columns come from the season's sport. GP is always first and MPG always last (when the
+    // sport tracks floor time at all); everything between is the sport's own.
+    var cfg = sportConfig(sportOfSeason(season));
+    var columns = [{ label: 'GP', get: function (a) { return a.gp; } }]
+      .concat(cfg.columns);
+    if (cfg.usesClock) {
+      columns.push({ label: 'MPG', get: function (a) { return formatTime(a.timeMs / a.gp); } });
+    }
+
     container.innerHTML =
       '<h3 class="avg-heading">Season Averages</h3>' +
       '<div class="avg-scroll"><table class="avg-table">' +
-        '<thead><tr><th>Player</th><th>GP</th><th>PPG</th><th>RPG</th><th>APG</th><th>SPG</th><th>BPG</th><th>TOPG</th><th>FG%</th><th>3P%</th><th>FT%</th><th>MPG</th></tr></thead>' +
+        '<thead><tr><th>Player</th>' +
+          columns.map(function (c) { return '<th>' + escapeHtml(c.label) + '</th>'; }).join('') +
+        '</tr></thead>' +
         '<tbody>' + rows.map(function (a) {
-          // FG% is basketball's own convention (2PT + 3PT combined, FT reported separately) —
-          // derived here at render time rather than folded into the generic aggregate above.
-          var madeFG = a.made2 + a.made3;
-          var attFG = (a.made2 + a.miss2) + (a.made3 + a.miss3);
-          var att3 = a.made3 + a.miss3;
-          var att1 = a.made1 + a.miss1;
-          return '<tr><td class="avg-name">' + escapeHtml(a.name) + '</td><td>' + a.gp + '</td><td>' + avg(a.pts, a.gp) + '</td><td>' +
-            avg(a.reb, a.gp) + '</td><td>' + avg(a.ast, a.gp) + '</td><td>' + avg(a.stl, a.gp) + '</td><td>' + avg(a.blk, a.gp) + '</td><td>' +
-            avg(a.to, a.gp) + '</td><td>' + pct(madeFG, attFG) + '</td><td>' + pct(a.made3, att3) + '</td><td>' + pct(a.made1, att1) + '</td><td>' + formatTime(a.timeMs / a.gp) + '</td></tr>';
+          return '<tr><td class="avg-name">' + escapeHtml(a.name) + '</td>' +
+            columns.map(function (c) { return '<td>' + c.get(a) + '</td>'; }).join('') +
+          '</tr>';
         }).join('') +
         '</tbody>' +
       '</table></div>';
@@ -1829,7 +2165,7 @@
     var pr = activeProfile();
     var season = activeSeasonOf(pr);
     var finalName = name.trim() || ('Game ' + (season.games.length + 1));
-    var game = freshGame(finalName, pr.name);
+    var game = freshGame(finalName, pr.name, sportOfSeason(season));
     season.games.unshift(game);
     save();
     openGame(game.id);
@@ -1861,10 +2197,13 @@
     document.getElementById('markWinBtn').classList.toggle('active', g.finalized && g.result === 'W');
     document.getElementById('markLossBtn').classList.toggle('active', g.finalized && g.result === 'L');
 
+    // The game clock only exists for sports that track floor time; volleyball and baseball have
+    // no equivalent, so the control is hidden rather than shown doing nothing.
     var clockBtn = document.getElementById('clockToggleBtn');
     var clockRunning = g.clockRunning !== false;
     clockBtn.textContent = clockRunning ? 'Clock Out' : 'Clock In';
     clockBtn.classList.toggle('paused', !clockRunning);
+    clockBtn.style.display = sportConfig(activeSport()).usesClock ? '' : 'none';
 
     var cardsEl = document.getElementById('cards');
 
@@ -1896,7 +2235,11 @@
     // Once anyone is on the floor, the bench collapses to one-line strips — a full card each meant
     // ~460px per player and 2+ screens of scrolling for a 3-player game. If nobody has been subbed
     // in (e.g. tracking an opposing player without using Sub In/Out at all), nothing collapses.
+    // Sports without a clock never collapse, because nobody is ever subbed in.
     var anyOnCourt = entries.some(function (e) { return e.p.onCourt; });
+
+    var sport = activeSport();
+    var cfg = sportConfig(sport);
 
     entries.forEach(function (entry) {
       var p = entry.p;
@@ -1909,19 +2252,13 @@
         strip.innerHTML =
           '<button class="bench-main" data-expand="' + idx + '" aria-label="Show full stats for ' + escapeHtml(p.name) + '">' +
             '<span class="bench-name">' + escapeHtml(p.name) + '</span>' +
-            '<span class="bench-stat"><b>' + points(p) + '</b> PTS</span>' +
+            '<span class="bench-stat"><b>' + points(p, sport) + '</b> ' + escapeHtml(cfg.primary.label.toUpperCase()) + '</span>' +
             '<span class="bench-stat">' + formatTime(currentPlayTime(p)) + '</span>' +
           '</button>' +
           '<button class="bench-sub" data-sub="' + idx + '">Sub In</button>';
         cardsEl.appendChild(strip);
         return;
       }
-
-      var att1 = p.made1 + p.miss1;
-      var att2 = p.made2 + p.miss2;
-      var att3 = p.made3 + p.miss3;
-      var attFG = att2 + att3;
-      var madeFG = p.made2 + p.made3;
 
       var card = document.createElement('div');
       card.className = 'card' + (p.onCourt ? ' on-court' : '');
@@ -1933,27 +2270,26 @@
           (p.onCourt ? '<span class="on-pill">On</span>' : '') +
           (!p.onCourt && anyOnCourt ? '<button class="icon-btn" data-collapse="' + idx + '" title="Collapse" aria-label="Collapse ' + escapeHtml(p.name) + '">&minus;</button>' : '') +
           (visibleCount > 1 ? '<button class="remove-btn" data-remove="' + idx + '" aria-label="Remove player" title="Remove player">&times;</button>' : '') +
-          '<div class="score-block"><div class="score">' + points(p) + '</div><div class="score-label">points</div></div>' +
+          '<div class="score-block"><div class="score">' + points(p, sport) + '</div><div class="score-label">' + escapeHtml(cfg.primary.label) + '</div></div>' +
         '</div>' +
-        // Only the totals the buttons below can't show: FG aggregates 2s+3s, and the percentages
-        // are derived. Per-stat counts (REB/AST/STL/BLK/TO) were repeating the button faces.
+        // Totals the buttons below can't show on their own. Basketball supplies its own line
+        // (FG aggregates 2s and 3s, a convention nothing generic could infer); every other sport
+        // falls back to made/attempted per shot type.
         '<div class="stat-row">' +
-          '<span><b>' + madeFG + '</b>/' + attFG + ' FG</span>' +
-          '<span class="sep">&middot;</span>' +
-          '<span><b>' + pct(madeFG, attFG) + '</b></span>' +
-          '<span class="sep">&middot;</span>' +
-          '<span><b>' + p.made1 + '</b>/' + att1 + ' FT</span>' +
+          cardSummary(p, cfg).map(function (part, i) {
+            return (i ? '<span class="sep">&middot;</span>' : '') + '<span><b>' + part + '</b></span>';
+          }).join('') +
         '</div>' +
         '<div class="extra-stats">' +
-          subBtnHtml(idx, p) +
-          sportConfig(DEFAULT_SPORT).tallyStats.map(function (s) {
+          (cfg.usesClock ? subBtnHtml(idx, p) : '') +
+          cfg.tallyStats.map(function (s) {
             return statBtnHtml(idx, s.key, s.label, p[s.key], s.tone);
           }).join('') +
         '</div>' +
         '<div class="shot-groups">' +
-          sportConfig(DEFAULT_SPORT).shotTypes.map(function (s) {
+          cfg.shotTypes.map(function (s) {
             var attempts = p[s.madeKey] + p[s.missKey];
-            return shotGroupHtml(idx, s.label, s.madeKey, s.missKey, p[s.madeKey], p[s.missKey], attempts);
+            return shotGroupHtml(idx, s, p[s.madeKey], p[s.missKey], attempts);
           }).join('') +
         '</div>' +
         '<div class="card-foot">' +
@@ -2061,14 +2397,28 @@
     }
   }
 
-  function shotGroupHtml(idx, label, madeKey, missKey, made, miss, att) {
+  // The make/miss faces are per shot type: "Make/Miss" for a basketball shot, but "Goal/Miss"
+  // for soccer and "Kill/Error" for a volleyball attack. Labelling them all "Make" would read
+  // as nonsense at the side of a pitch.
+  function shotGroupHtml(idx, shotType, made, miss, att) {
     return (
       '<div class="shot-group">' +
-        '<div class="shot-tag">' + label + '<br/>' + pct(made, att) + '</div>' +
-        '<button class="shot-btn make" data-make data-idx="' + idx + '" data-key="' + madeKey + '"><span class="n">' + made + '</span><span class="l">Make</span></button>' +
-        '<button class="shot-btn miss" data-miss data-idx="' + idx + '" data-key="' + missKey + '"><span class="n">' + miss + '</span><span class="l">Miss</span></button>' +
+        '<div class="shot-tag">' + escapeHtml(shotType.label) + '<br/>' + pct(made, att) + '</div>' +
+        '<button class="shot-btn make" data-make data-idx="' + idx + '" data-key="' + shotType.madeKey + '"><span class="n">' + made + '</span><span class="l">' + escapeHtml(shotType.makeLabel || 'Make') + '</span></button>' +
+        '<button class="shot-btn miss" data-miss data-idx="' + idx + '" data-key="' + shotType.missKey + '"><span class="n">' + miss + '</span><span class="l">' + escapeHtml(shotType.missLabel || 'Miss') + '</span></button>' +
       '</div>'
     );
+  }
+
+  // The line under a player's headline number. Sports can override it (basketball does, to show
+  // FG); otherwise it's made/attempted for each shot type, and nothing at all for a sport with
+  // no shot types, where the tally buttons already show every number there is.
+  function cardSummary(p, cfg) {
+    if (cfg.summary) return cfg.summary(p);
+    return cfg.shotTypes.map(function (s) {
+      var att = p[s.madeKey] + p[s.missKey];
+      return p[s.madeKey] + '/' + att + ' ' + s.label;
+    });
   }
 
   function statBtnHtml(idx, key, label, count, tone) {
@@ -2089,11 +2439,11 @@
 
   // Looked up from SPORTS rather than a separate hardcoded map, so a stat/shot's label and tone
   // can't drift out of sync with the card rendering above (statBtnHtml/shotGroupHtml callers).
-  function tallyStatMeta(key) {
-    return sportConfig(DEFAULT_SPORT).tallyStats.filter(function (s) { return s.key === key; })[0];
+  function tallyStatMeta(key, sport) {
+    return sportConfig(sport).tallyStats.filter(function (s) { return s.key === key; })[0];
   }
-  function shotTypeMetaByKey(key) {
-    return sportConfig(DEFAULT_SPORT).shotTypes.filter(function (s) {
+  function shotTypeMetaByKey(key, sport) {
+    return sportConfig(sport).shotTypes.filter(function (s) {
       return s.madeKey === key || s.missKey === key;
     })[0];
   }
@@ -2101,10 +2451,12 @@
   function handleStat(el) {
     var idx = +el.dataset.idx;
     var key = el.dataset.key;
+    var sport = activeSport();
     var p = activeGame().players[idx];
-    var meta = tallyStatMeta(key);
+    var meta = tallyStatMeta(key, sport);
+    if (!meta) return; // key isn't in this season's schema — nothing sane to record
     p.log.push({ id: uid(), ts: now(), key: key, result: meta.tone, label: meta.label, removed: false });
-    recomputeFromLog(p);
+    recomputeFromLog(p, sport);
     save();
     render();
   }
@@ -2112,16 +2464,21 @@
   function handleShot(el) {
     var idx = +el.dataset.idx;
     var key = el.dataset.key;
+    var sport = activeSport();
     var p = activeGame().players[idx];
-    var meta = shotTypeMetaByKey(key);
-    var isMake = key.indexOf('made') === 0;
+    var meta = shotTypeMetaByKey(key, sport);
+    if (!meta) return;
+    // Compared against the schema's own madeKey rather than sniffing the key for a "made"
+    // prefix: that prefix is a basketball naming accident, and a soccer goal ('goals') would
+    // have been recorded as a miss.
+    var isMake = meta.madeKey === key;
     p.log.push({
       id: uid(), ts: now(), key: key,
       result: isMake ? 'make' : 'miss',
-      label: meta.label + ' ' + (isMake ? 'Make' : 'Miss'),
+      label: meta.label + ' ' + (isMake ? (meta.makeLabel || 'Make') : (meta.missLabel || 'Miss')),
       removed: false
     });
-    recomputeFromLog(p);
+    recomputeFromLog(p, sport);
     save();
     render();
   }
@@ -2134,7 +2491,7 @@
     var last = active[active.length - 1];
     if (!last) return;
     last.removed = true;
-    recomputeFromLog(p);
+    recomputeFromLog(p, activeSport());
     save();
     render();
   }
@@ -2179,7 +2536,7 @@
     var n = activePlayers(activeGame()).length + 1;
     var name = 'Player ' + n;
     while (hasDuplicateName(players, -1, name)) { n++; name = 'Player ' + n; }
-    var added = emptyPlayer(name, 'neutral');
+    var added = emptyPlayer(name, 'neutral', activeSport());
     // Start expanded: a player you just added is one you're about to name, and the bench-collapse
     // rule would otherwise hide the name field behind an extra tap the moment anyone is on court.
     added.expanded = true;
@@ -2195,9 +2552,10 @@
       // every player, so the next merge with a device still holding the old ids unioned the two
       // sets and duplicated the whole roster. Log entries are tombstoned rather than dropped for
       // the same reason Undo tombstones — an emptied log is just re-unioned from the other device.
+      var resetSport = activeSport();
       g.players.forEach(function (p) {
         (p.log || []).forEach(function (e) { e.removed = true; });
-        recomputeFromLog(p);
+        recomputeFromLog(p, resetSport);
         p.onCourt = false;
         p.subInAt = null;
         p.timeMs = 0;
