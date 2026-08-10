@@ -14,8 +14,8 @@ Built for scoring from the stands, including **two parents scoring the same game
 Install it to a phone's home screen and it behaves like a native app (standalone mode, screen
 stays awake while open).
 
-**Free and self-hosted, forever.** If it saved you some effort, you can chip in here:
-TKTK_DONATE_URL
+**Free and self-hosted, forever.** If it saved you some effort, you can
+[buy me a coffee](https://ko-fi.com/raymondoooo).
 
 ---
 

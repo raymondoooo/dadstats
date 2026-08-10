@@ -640,6 +640,9 @@
   }
   .login-error { color: var(--miss); font-size: 0.76rem; min-height: 1.2em; margin-bottom: 6px; }
   .login-hint { color: var(--ink-muted); font-size: 0.72rem; margin: -2px 0 12px; }
+  /* Default browser blue reads as a broken link against this palette. */
+  .login-hint a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .login-hint a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -651,11 +654,12 @@
     <input type="password" id="loginPassword" placeholder="Family password" autocomplete="current-password" required />
     <div class="login-hint">Use the password whoever runs this server gave your family.</div>
     <button type="submit">Sign In</button>
-    <!-- TKTK_DONATE_URL is a placeholder token: search-and-replace it repo-wide once the real
-         donation link exists. Chosen to be greppable and impossible to hit by accident. -->
+    <!-- Deliberately only on the sign-in screen: nobody wants a donation prompt in their face
+         while they're scoring a game. The link is portfolio-level, not DadStats-specific,
+         because the Ko-fi page covers everything I publish. -->
     <div class="login-hint" style="margin-top:14px">
       DadStats is free and self-hosted.
-      <a href="TKTK_DONATE_URL" target="_blank" rel="noopener noreferrer">Support it</a>
+      <a href="https://ko-fi.com/raymondoooo" target="_blank" rel="noopener noreferrer">Support my work</a>
     </div>
   </form>
 </div>
