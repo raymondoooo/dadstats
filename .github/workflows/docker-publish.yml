@@ -45,13 +45,21 @@ jobs:
         with:
           node-version: '22'
 
+      # Installed outside the repo on purpose: `npm install` in the root would pull in the app's
+      # own dependencies too, needlessly recompiling better-sqlite3 on the runner when the
+      # container under test already has it, and would rewrite package.json.
       - name: Install Playwright
-        run: npm install playwright && npx playwright install --with-deps chromium
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw
+          npm init -y >/dev/null
+          npm install playwright
+          npx playwright install --with-deps chromium
 
       - name: Run end-to-end tests
         env:
           APP_URL: http://localhost:3208
           ADMIN_PASSWORD: ci-admin-password
+          NODE_PATH: /tmp/pw/node_modules
         run: |
           node test/admin-check.js
           node test/ui-check.js
