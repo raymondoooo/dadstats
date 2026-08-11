@@ -19,6 +19,18 @@ Single container: Express + `better-sqlite3` (no separate DB service), built and
 `docker build` / `docker run`. See `.env.example` for config; `SQLITE_PATH` points at the data
 file, which should live on a mounted volume.
 
+Built to `/stacks/products/docs/CONTAINER-STANDARDS.md`. Read that before changing the Dockerfile,
+the schema, or CI — most of what looks like overkill in those files is there because it broke
+somewhere.
+
+## Schema changes
+`SCHEMA_VERSION` + `MIGRATIONS` in `server/db.js`. Bump the version, add the migration, keep it
+additive and guarded (`PRAGMA table_info` before an ALTER) — it runs unattended against a
+stranger's live database on every boot. On upgrade the DB is snapshotted to `data/backups/` with
+a synchronous `VACUUM INTO` **before** migrating; an older binary meeting a newer database exits
+non-zero rather than writing through a schema it can't read. Never drop/rename a column, change a
+type, or add NOT NULL without a default.
+
 ## Auth shape
 Admin (`/admin`, `ADMIN_PASSWORD`) creates families and sets their passwords. Families sign in
 with that password — no usernames, and one password per family on purpose, so two parents can

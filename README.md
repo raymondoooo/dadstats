@@ -320,10 +320,33 @@ in-place upgrade without a separate migration step.
 
 `GET /api/health` reports DB connectivity, and the image ships a Docker `HEALTHCHECK` that uses it.
 
-**Runs as the unprivileged `node` user (uid 1000).** A *named* volume (as above) picks up the
-right ownership automatically. A *bind* mount keeps the host directory's ownership, so
-`-v /srv/dadstats:/app/data` needs `chown 1000:1000 /srv/dadstats` first or the app can't write
-its database.
+**Runs as the unprivileged `node` user.** The container starts as root only long enough to fix
+ownership of the mounted data directory, then drops privileges — so named volumes and bind mounts
+both work with no preparation on your side.
+
+### Your data, and backing it up
+
+Everything lives under one directory — the volume you mounted at `/app/data`:
+
+```
+/app/data
+├── dadstats.db          the entire database: families, kids, seasons, games
+├── .jwt_secret          signing key for sessions
+├── .admin_password      generated admin password (absent if you set ADMIN_PASSWORD)
+└── backups/             automatic pre-upgrade snapshots
+```
+
+**Back up that folder and you've backed up everything.** Stop the container first for a clean
+copy, or use `sqlite3 dadstats.db ".backup ..."` while it runs.
+
+Before any schema upgrade, DadStats snapshots the database into `backups/` automatically. To roll
+back, stop the container, copy a snapshot over `dadstats.db` (removing any `-wal`/`-shm`
+alongside), and start the image that matches it.
+
+**Upgrades are one-way.** The database records its schema version, and an older image will
+**refuse to start** against a newer database rather than write through a schema it doesn't
+understand and corrupt your season. If you roll back and see that error, either pull the newer
+image again or restore a snapshot.
 
 ### Editing the client
 

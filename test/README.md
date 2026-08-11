@@ -1,6 +1,6 @@
 # Tests
 
-Five end-to-end browser checks. They drive a **running instance** over HTTP — there is no unit
+Five browser checks plus two non-browser suites. They drive a **running instance** over HTTP — there is no unit
 test layer, because nearly all the logic lives in one browser-side file.
 
 Each test provisions its own throwaway family through the admin API (`helpers.js`), so runs never
@@ -43,7 +43,19 @@ APP_URL=http://localhost:3209 node test/setup-check.js
 docker rm -f dadstats-fresh && docker volume rm dadstats-fresh-data
 ```
 
-All five exit non-zero on failure and drop screenshots in `test/screenshots/`.
+```bash
+# image + runtime invariants (manages its own containers, needs no browser)
+IMAGE=dadstats ./test/image-check.sh
+
+# security regressions — run LAST, see below
+APP_URL=http://localhost:3208 ADMIN_PASSWORD=test-admin-pw node test/security-check.js
+```
+
+All of them exit non-zero on failure; the browser ones drop screenshots in `test/screenshots/`.
+
+**Order matters for one of them.** `security-check.js` deliberately trips the login rate limiter,
+which then blocks family logins from that IP for 15 minutes — so run it last, or the other suites
+fail for reasons that have nothing to do with them.
 
 ## What each one covers
 
@@ -86,3 +98,22 @@ That last part is the security property — if setup ever stayed open it would b
 which is exactly what the admin model removed.
 
 Run it after touching `server/admin.js` setup handlers, `boot()`, or the login/setup markup.
+
+**`image-check.sh`** — properties of the image itself, which regress silently because no app
+behaviour changes when they break: no build toolchain in the runtime image, OCI labels present,
+the process actually runs unprivileged (checked on PID 1, since the entrypoint starts as root and
+drops), the healthcheck reaches `healthy`, data survives a container **recreate** (not just a
+restart — a restart would still pass if data lived in the container layer), and a bind mount to a
+host path Docker had to create still starts. That last one was a real failure: Docker creates a
+missing host path as root and the unprivileged app died with `SQLITE_CANTOPEN`.
+
+Run it after touching the Dockerfile or `docker-entrypoint.sh`.
+
+**`security-check.js`** — one case per security bug ever found here, plus the boundaries in
+`SECURITY.md`: the session cookie's `Secure` flag tracks `SECURE_COOKIES` (it was once derived
+from `NODE_ENV`, which silently broke login over plain HTTP), a wrong password is rejected, an
+unknown password does not create an account, `/api/setup` stays closed once configured, a family
+session can't reach the admin API, logout invalidates the session, and the rate limiter still
+trips when `X-Forwarded-For` is rotated.
+
+Run it after touching anything in `server/auth.js`, `server/ratelimit.js`, or the setup handlers.
