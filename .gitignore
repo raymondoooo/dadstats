@@ -12,3 +12,6 @@ backups/
 backups-encrypted/
 data/
 test/screenshots/
+
+# Personal release checklist — useful locally, not something to ship to strangers.
+MORNING.md

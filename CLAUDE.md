@@ -19,9 +19,10 @@ Single container: Express + `better-sqlite3` (no separate DB service), built and
 `docker build` / `docker run`. See `.env.example` for config; `SQLITE_PATH` points at the data
 file, which should live on a mounted volume.
 
-Built to `/stacks/products/docs/CONTAINER-STANDARDS.md`. Read that before changing the Dockerfile,
-the schema, or CI — most of what looks like overkill in those files is there because it broke
-somewhere.
+Before changing the Dockerfile, the schema, or CI: most of what looks like overkill in those
+files is there because it broke somewhere, and the reason is in the comment next to it. The
+entrypoint's runtime `chown`, the SIGTERM handler, the pre-migration backup and the downgrade
+guard each exist because the absence of them was a real failure, not a hypothetical.
 
 ## Schema changes
 `SCHEMA_VERSION` + `MIGRATIONS` in `server/db.js`. Bump the version, add the migration, keep it
