@@ -22,6 +22,20 @@ stays awake while open).
 
 ---
 
+## What it looks like
+
+| Scoring a live game | The season |
+|---|---|
+| <img src="docs/screenshots/tracker.png" alt="Player card mid-game: 11 points, an ON pill, a running sub clock, tap counters for rebounds and assists, and make/miss rows per shot type. Benched players collapse to one-line strips." width="330"> | <img src="docs/screenshots/season.png" alt="Season screen: a 2-1 record, per-player averages table, and the game list with W/L chips and an in-progress game." width="330"> |
+| On-court players sort to the top and keep a live clock. Everyone else collapses to a one-line strip, so a full roster still fits on a phone. | Averages count finalized games only, so a game in progress never skews them. |
+
+| One kid, two sports | Averages follow the sport |
+|---|---|
+| <img src="docs/screenshots/seasons.png" alt="Two seasons under one kid: Winter 2026 basketball at 2-1, Spring 2026 soccer at 2-0." width="330"> | <img src="docs/screenshots/soccer.png" alt="Soccer season averages showing goals, goals per game, assists, shots, shot percentage, saves, tackles and fouls." width="330"> |
+| The sport belongs to the season, so a basketball winter and a soccer spring share one name and one record. | Soccer shows goals and shot%, not PPG and FG% — the whole table changes with the sport. |
+
+---
+
 ## Quick start
 
 ```bash
