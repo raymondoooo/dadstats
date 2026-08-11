@@ -44,6 +44,9 @@ docker rm -f dadstats-fresh && docker volume rm dadstats-fresh-data
 ```
 
 ```bash
+# static — no container, no browser, runs in a second
+node test/markup-check.js
+
 # image + runtime invariants (manages its own containers, needs no browser)
 IMAGE=dadstats ./test/image-check.sh
 
@@ -117,3 +120,10 @@ session can't reach the admin API, logout invalidates the session, and the rate 
 trips when `X-Forwarded-For` is rotated.
 
 Run it after touching anything in `server/auth.js`, `server/ratelimit.js`, or the setup handlers.
+
+**`markup-check.js`** — static, instant, no container. Asserts every element id the client
+reaches for actually exists in the markup. The client builds HTML from strings, so a renamed or
+typo'd id fails silently: `getElementById` returns null, the listener never attaches, and the
+button simply does nothing — no error, no failed request, nothing a server-side test can see.
+
+Run it after touching any markup or handler wiring. It's the cheapest check here.
