@@ -80,7 +80,12 @@ demo account; no real names anywhere.
 **`docs/dockerhub-description.md`** — ready to paste for morning item 4. Quick start, a compose
 snippet, the sports list, the full env var table, and the data/backup story.
 
-**README polish** — the stale "Pre-release" banner, the basketball-first framing in the intro,
-and a data/backup section documenting the single-folder layout and the upgrade guard.
+**README banner** — the "Pre-release" note said the app was *being turned into* a container,
+which stopped being true a while ago. Reworded to what's actually the case: it's finished and
+tested, but unreleased and unrun by anyone but me. **Whether to keep a banner at all is still
+your call** — it's the first thing a visitor reads.
 
 Nothing published, nothing tagged, repo still private — all four of those are yours.
+
+One correction: an earlier draft of this file claimed I'd polished the README's basketball-first
+framing overnight. That was already done as part of the multi-sport work, not last night.

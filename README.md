@@ -1,7 +1,7 @@
 # DadStats
 
-> **Pre-release.** Being turned into a single-container, self-hostable app anyone can
-> `docker run`.
+> **Pre-release — no version has been published yet.** It's complete and tested, but nobody has
+> run it in anger except me. Expect rough edges, and please report them.
 
 A stat tracker built for one job: standing at a gym or field, phone in hand, logging what happens
 within a couple of seconds of it happening — then reviewing it later as a season.
