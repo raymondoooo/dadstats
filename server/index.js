@@ -45,8 +45,10 @@ app.get('/api/health', (req, res) => {
   }
 });
 
-// Express 4 doesn't catch a rejected promise from an async handler — the request would hang
-// until the client gave up rather than returning a 500. Anything async gets wrapped.
+// Express 5 forwards a rejected promise from an async handler to the error middleware on its
+// own, which Express 4 did not — a rejection there used to hang the request until the client
+// gave up. Kept anyway: it costs nothing, it makes the intent explicit at each async route, and
+// it means these handlers don't silently depend on which major of Express is installed.
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 // --- First-run setup ---
@@ -195,7 +197,7 @@ app.use((err, req, res, next) => {
 const port = process.env.PORT || 3108;
 initSchema();
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`dadstats listening on ${port}`);
 
   // An auto-generated admin password is worthless if the owner never sees it, and it's only
@@ -214,3 +216,38 @@ app.listen(port, () => {
     console.log(`Open http://localhost:${port} to set up your first family.`);
   }
 });
+
+// The entrypoint execs node as PID 1, and Linux gives PID 1 no default signal dispositions —
+// so without these handlers SIGTERM is simply ignored. Docker then waits out its grace period
+// and SIGKILLs, which meant every stop, restart and redeploy took ten seconds and killed the
+// database mid-write instead of closing it. WAL makes that survivable, not correct.
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received — shutting down`);
+
+  // SSE streams are deliberately long-lived, so server.close() would wait on them forever:
+  // it stops accepting new connections but does not end open ones. Close them explicitly.
+  for (const streams of familyStreams.values()) {
+    for (const stream of streams) {
+      try { stream.end(); } catch { /* already gone */ }
+    }
+  }
+  familyStreams.clear();
+
+  server.close(() => {
+    try { db.close(); } catch { /* nothing useful to do at this point */ }
+    process.exit(0);
+  });
+
+  // Backstop for a request that refuses to finish. Well inside Docker's default 10s grace, so
+  // a clean-ish exit still beats being killed.
+  setTimeout(() => {
+    try { db.close(); } catch { /* ignore */ }
+    process.exit(0);
+  }, 5000).unref();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
