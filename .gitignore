@@ -13,5 +13,7 @@ backups-encrypted/
 data/
 test/screenshots/
 
-# Personal release checklist — useful locally, not something to ship to strangers.
+# Local working notes, kept out of the published repo
+CLAUDE.md
 MORNING.md
+docs/dockerhub-description.md

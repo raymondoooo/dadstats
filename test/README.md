@@ -66,9 +66,9 @@ fail for reasons that have nothing to do with them.
 cookie jars and separate localStorage: two phones), signs both into the same family, has both
 land on the same live game, then taps *different* stats on each and asserts **both devices end
 up with the union of all taps**. This is the contract described in README § "Sync (the hard
-part)" and flagged in CLAUDE.md — derived counters plus tombstoned deletes are what make
-concurrent scoring merge instead of clobber, and when that breaks it stays invisible until two
-people are scoring a real game from the stands.
+part)" — derived counters plus tombstoned deletes are what make concurrent scoring merge
+instead of clobber, and when that breaks it stays invisible until two people are scoring a real
+game from the stands.
 
 Run it after touching: `mergeStates` / `mergePlayer` / `mergeLogs` / `mergeGamesInto`,
 `recomputeFromLog`, the `PUT /api/state` version check, or the SSE push.

@@ -3,3 +3,19 @@ node_modules/
 .env
 data/
 *.log
+
+# Local working notes. These are gitignored, but that alone doesn't keep them out of the image —
+# `COPY . .` takes whatever is on disk, so anything excluded from the repo has to be excluded
+# here too or it ships to every user inside the container.
+CLAUDE.md
+MORNING.md
+docs/dockerhub-description.md
+
+# Nothing the running app needs; keeps the build context small and the image free of material
+# that only matters to whoever is developing it.
+docs/
+test/
+.github/
+README.md
+SECURITY.md
+LICENSE.spdx
