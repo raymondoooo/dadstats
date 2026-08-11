@@ -24,3 +24,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Patch and minor only. Dependabot has no idea which Node majors are LTS, and it proposed
+    # node 26 — a Current release, not LTS — which better-sqlite3 can't even compile against.
+    # Major base-image moves are a deliberate decision made at LTS transitions, not a PR to merge
+    # on a Tuesday. Revisit when the current LTS goes into maintenance.
+    ignore:
+      - dependency-name: node
+        update-types: [version-update:semver-major]
