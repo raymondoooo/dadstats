@@ -96,6 +96,30 @@ else
   fail "data did not survive a container recreate"
 fi
 
+echo "== graceful shutdown =="
+
+# node runs as PID 1, and Linux gives PID 1 no default signal dispositions — so without explicit
+# handlers SIGTERM is ignored, docker waits out its grace period and SIGKILLs (exit 137, ten
+# seconds, database killed mid-write). An open SSE stream also has to be closed explicitly or
+# server.close() waits on it forever.
+docker rm -f "$NAME" >/dev/null 2>&1
+docker run -d --name "$NAME" -p "$PORT:3108" -v "$VOLUME:/app/data" "$IMAGE" >/dev/null
+wait_healthy "$NAME" 45 >/dev/null
+jar2=$(mktemp)
+curl -sf -c "$jar2" -X POST "localhost:$PORT/api/setup" -H 'Content-Type: application/json' \
+  -d '{"name":"Shutdown","password":"shutdown-test-pw"}' >/dev/null 2>&1
+( timeout 25 curl -sf -b "$jar2" "localhost:$PORT/api/events" >/dev/null 2>&1 & )
+sleep 2
+start=$(date +%s)
+docker stop "$NAME" >/dev/null 2>&1
+elapsed=$(( $(date +%s) - start ))
+code=$(docker inspect -f '{{.State.ExitCode}}' "$NAME" 2>/dev/null)
+if [ "$code" = "0" ] && [ "$elapsed" -lt 8 ]; then
+  pass "shuts down gracefully on SIGTERM (${elapsed}s, exit 0)"
+else
+  fail "unclean shutdown: ${elapsed}s, exit ${code:-unknown} (137 = SIGKILL after grace period)"
+fi
+
 echo "== bind mount =="
 
 # The failure this guards: Docker creates a missing host path as root, and an unprivileged app
