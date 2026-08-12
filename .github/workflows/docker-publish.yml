@@ -151,13 +151,25 @@ jobs:
           images: |
             ${{ secrets.DOCKERHUB_USERNAME }}/dadstats
             ghcr.io/${{ github.repository }}
-          # Full ladder so users pin at whatever risk level suits them: exact, minor, major, or
-          # "whatever's newest".
+          # Two channels, decided by whether the tag is a prerelease — a hyphen in the tag name,
+          # per semver (v0.3.0-beta.1 is a prerelease, v0.3.0 is not).
+          #
+          # Stable gets the full ladder, so people can pin at whatever risk level suits them:
+          # exact, minor, major, or "whatever's newest".
+          #
+          # A prerelease publishes ONLY its exact version plus a moving :beta. It must never
+          # touch :latest, :0.3 or :0 — anyone pinned to those asked for stable, and shipping
+          # them a beta because it happens to be newer is how you lose people running this on
+          # their own hardware.
+          #
+          # The conditions are spelled out rather than leaning on metadata-action's implicit
+          # prerelease handling: being subtly wrong here means pushing a beta to every install.
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest
+            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
+            type=semver,pattern={{major}},enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=beta,enable=${{ contains(github.ref_name, '-') }}
 
       - name: Build and push
         uses: docker/build-push-action@v7
