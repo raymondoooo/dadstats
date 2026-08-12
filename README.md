@@ -1,7 +1,7 @@
 # DadStats
 
-> **Pre-release — no version has been published yet.** It's complete and tested, but nobody has
-> run it in anger except me. Expect rough edges, and please report them.
+> **Early days — `0.x`.** Released and tested, but not yet used in anger by anyone but me.
+> Expect rough edges, and please report them.
 
 A stat tracker built for one job: standing at a gym or field, phone in hand, logging what happens
 within a couple of seconds of it happening — then reviewing it later as a season.
@@ -41,7 +41,6 @@ stays awake while open).
 ```bash
 docker run -d --name dadstats -p 3108:3108 -v dadstats-data:/app/data \
   raymondoooo/dadstats
-
 ```
 
 Open `http://localhost:3108` and pick a family name and password. That's it — you're in.
@@ -50,6 +49,36 @@ Adding **more** families later (if you're hosting for other people) is done at
 `/admin`; the admin password is printed to the container logs on first run
 (`docker logs dadstats`) or set with `-e ADMIN_PASSWORD=...`. See
 [Running it](#running-it) for the full config.
+
+---
+
+## Versions
+
+Two channels. Stable is the default; nothing you do accidentally opts you into a beta.
+
+| Tag | What it is |
+|---|---|
+| `latest` | Newest stable. Fine for most people. |
+| `0.2`, `0` | Newest stable within that minor / major. Pin here if you want updates but no surprises. |
+| `0.2.2` | Exactly that build, forever. |
+| `beta` | Newest **prerelease**. Opt-in only — never served to `latest` or any stable pin. |
+
+Betas exist so new features get real use before they reach people mid-season. They pass the same
+full test suite as a stable release; what they haven't had is weeks of somebody's actual games.
+
+```bash
+# stable (default)
+docker run -d -p 3108:3108 -v dadstats-data:/app/data raymondoooo/dadstats
+
+# beta — please report what breaks
+docker run -d -p 3108:3108 -v dadstats-beta:/app/data raymondoooo/dadstats:beta
+```
+
+**Use a separate volume for a beta.** Upgrades migrate your database and are one-way: an older
+image refuses to start against a newer schema rather than risk corrupting it. Trying a beta on
+your real data means you can't easily go back.
+
+Versions before `0.2.2` are not available — they had a bug that broke bind-mounted volumes.
 
 ---
 
