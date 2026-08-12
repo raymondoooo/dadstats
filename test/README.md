@@ -1,6 +1,6 @@
 # Tests
 
-Five browser checks plus two non-browser suites. They drive a **running instance** over HTTP — there is no unit
+Six browser checks plus two non-browser suites. They drive a **running instance** over HTTP — there is no unit
 test layer, because nearly all the logic lives in one browser-side file.
 
 Each test provisions its own throwaway family through the admin API (`helpers.js`), so runs never
@@ -30,6 +30,7 @@ node test/sync-check.js
 node test/ui-check.js
 node test/admin-check.js
 node test/sport-check.js
+node test/measurement-check.js
 ```
 
 `setup-check.js` is the exception: first-run setup only exists on an instance with **no families
@@ -93,6 +94,19 @@ basketball's. That combination is the multi-sport feature: the sport belongs to 
 
 Run it after touching `SPORTS`, `freshSeason`, `sportOfSeason`, or anything that threads `sport`
 through the tracker or averages.
+
+**`measurement-check.js`** — swimming, track, golf and bowling: that the forgiving time parser
+reads what people actually type, that a bad value is refused rather than stored as NaN, that a
+personal best knows lower is better for a time but higher for a bowling score, and that deleting
+a result tombstones it and the best recomputes.
+
+Critically it also **reloads the page mid-test**. A measurement result carries a `value` on its
+log entry, and `sanitize()` — which runs on every load and at the end of every merge — once
+rebuilt log entries from a field whitelist that omitted it. Every result silently lost its number
+with no error anywhere, and it only showed up when a background resync happened to land during a
+session. The reload makes that path deterministic.
+
+Run it after touching `withDefaults`, `sanitize`, `parseValue`, or `seasonBests`.
 
 **`setup-check.js`** — on a virgin instance, asserts the setup form replaces the sign-in form,
 rejects a too-short password, signs you straight into the app with no second login, and then

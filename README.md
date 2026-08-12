@@ -6,10 +6,13 @@
 A stat tracker built for one job: standing at a gym or field, phone in hand, logging what happens
 within a couple of seconds of it happening — then reviewing it later as a season.
 
-**Seven sports:** basketball, soccer, hockey, field hockey, lacrosse, volleyball, and
-baseball/softball. The sport is set per *season*, so one kid can play basketball in the winter
-and soccer in the spring under the same name and the same win-loss record — each season tracks
-its own stats and shows its own averages table.
+**Eleven sports.** Tap-to-count for team sports — basketball, soccer, hockey, field hockey,
+lacrosse, volleyball, baseball/softball — and typed results for individual ones: swimming, track
+& field, golf, bowling.
+
+The sport is set per *season*, so one kid can swim in the summer and play basketball in the
+winter under the same name. Each season tracks its own stats: a basketball season shows PPG and
+FG%, a soccer season shows goals and shot%, a swimming season shows personal bests per event.
 
 Built for scoring from the stands, including **two parents scoring the same game from two phones**
 — taps from both merge instead of one overwriting the other.
@@ -211,6 +214,20 @@ Three rules matter more than the rest:
 ---
 
 ## Sports
+
+Two shapes, both defined in one `SPORTS` object in `public/index.html`.
+
+**Tally sports** (basketball, soccer, hockey, field hockey, lacrosse, volleyball,
+baseball/softball) count taps: every stat is a button, and totals are derived from the event log.
+
+**Measurement sports** (swimming, track & field, golf, bowling) record a typed value per event —
+a time, a distance, a score. There are no counters; the season view is personal bests per event,
+with the best flagged when the most recent attempt *is* the best. Times are parsed forgivingly:
+`1:12.40`, `72.4` and `1.12.40` all work, because phone keyboards make colons awkward.
+
+Golf records a round total and bowling a game score. Per-hole golf against par, and
+frame-by-frame bowling where a strike's value depends on the next two balls, are genuinely
+different models and aren't attempted.
 
 Every sport-specific detail lives in one `SPORTS` object in `public/index.html`: which tally
 buttons exist, which make/miss pairs exist and what their faces say, what the card's headline

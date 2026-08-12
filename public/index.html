@@ -189,6 +189,35 @@
   .season-form-actions button.ghost {
     background: transparent; color: var(--ink-muted); border: 1px solid var(--border);
   }
+  .results { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 4px; }
+  .result-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 11px; border-radius: 9px;
+    background: var(--make-bg); border: 1px solid var(--border);
+  }
+  .result-event { flex: 1; font-size: 0.86rem; }
+  .result-value { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .result-add { display: flex; gap: 6px; margin-top: 4px; }
+  .result-add select, .result-add input {
+    font: inherit; font-size: 0.9rem; padding: 9px 10px;
+    border: 1px solid var(--border); border-radius: 9px;
+    background: var(--surface-raised); color: var(--ink); min-width: 0;
+  }
+  .result-add select { flex: 0 0 42%; }
+  .result-add input { flex: 1; }
+  .result-save {
+    font: inherit; font-weight: 700; font-size: 0.85rem; cursor: pointer;
+    border: none; border-radius: 9px; padding: 9px 14px;
+    background: var(--accent); color: var(--accent-ink);
+  }
+  .result-error { color: var(--miss); font-size: 0.72rem; min-height: 1em; margin-top: 4px; }
+  .pb-athlete { margin-bottom: 16px; }
+  .pb-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 6px; }
+  .pb-flag {
+    font-size: 0.6rem; font-weight: 800; letter-spacing: 0.04em;
+    padding: 1px 5px; border-radius: 999px;
+    background: rgba(47, 158, 68, 0.16); color: var(--make);
+  }
   .sport-chip {
     font-size: 0.66rem; padding: 2px 8px; border-radius: 999px; white-space: nowrap;
     background: rgba(36, 28, 18, 0.06); color: var(--ink-muted);
@@ -761,13 +790,13 @@
     <div class="toolbar">
       <input class="toolbar-input" id="gameNameInput" placeholder="Name this game (e.g. vs Eagles)" aria-label="Game name" />
       <input class="toolbar-input toolbar-date" type="datetime-local" id="gameDateInput" aria-label="Game date and time" />
-      <div class="result-toggle">
+      <div class="result-toggle" id="resultToggle">
         <button class="toolbar-btn result-btn win" id="markWinBtn">Win</button>
         <button class="toolbar-btn result-btn loss" id="markLossBtn">Loss</button>
       </div>
     </div>
 
-    <div class="gamebar">
+    <div class="gamebar" id="gameBar">
       <div class="scoreboard">
         <div class="sb-side">
           <span class="sb-label">Us</span>
@@ -1053,6 +1082,93 @@
         { label: 'K', get: function (a) { return a.so; } },
         { label: 'SB', get: function (a) { return a.sb; } }
       ]
+    },
+
+    // ---- Measurement sports ----
+    //
+    // A different shape from everything above. There are no tap-counters: a result is a single
+    // measured value for a named event — a time, a distance, a score — and what matters across a
+    // season is the personal best and whether it's improving.
+    //
+    // They still ride on the same storage and merge machinery. Each result is an entry in the
+    // player's log[] carrying a `value`, so two phones at the same meet union their entries by id
+    // and a deleted result stays deleted. Personal bests are derived at render, never stored,
+    // which is the same rule that makes the tally sports safe to merge.
+    //
+    //   events   { key, label, unit, better? }
+    //            unit decides how the value is parsed and displayed: 'time' (mm:ss.hh),
+    //            'distance' (metres), 'score' (whole number).
+    //            better defaults to lower for time/score and higher for distance; bowling
+    //            overrides it, because there a bigger number is the good one.
+
+    swimming: {
+      label: 'Swimming',
+      icon: '🏊',
+      mode: 'measurement',
+      usesClock: false,
+      events: [
+        { key: 'free50', label: '50 Free', unit: 'time' },
+        { key: 'free100', label: '100 Free', unit: 'time' },
+        { key: 'free200', label: '200 Free', unit: 'time' },
+        { key: 'back50', label: '50 Back', unit: 'time' },
+        { key: 'back100', label: '100 Back', unit: 'time' },
+        { key: 'breast50', label: '50 Breast', unit: 'time' },
+        { key: 'breast100', label: '100 Breast', unit: 'time' },
+        { key: 'fly50', label: '50 Fly', unit: 'time' },
+        { key: 'fly100', label: '100 Fly', unit: 'time' },
+        { key: 'im100', label: '100 IM', unit: 'time' },
+        { key: 'im200', label: '200 IM', unit: 'time' }
+      ]
+    },
+
+    track: {
+      label: 'Track & Field',
+      icon: '🏃',
+      mode: 'measurement',
+      usesClock: false,
+      events: [
+        { key: 'r60', label: '60m', unit: 'time' },
+        { key: 'r100', label: '100m', unit: 'time' },
+        { key: 'r200', label: '200m', unit: 'time' },
+        { key: 'r400', label: '400m', unit: 'time' },
+        { key: 'r800', label: '800m', unit: 'time' },
+        { key: 'r1600', label: '1600m', unit: 'time' },
+        { key: 'hurdles', label: 'Hurdles', unit: 'time' },
+        { key: 'longjump', label: 'Long Jump', unit: 'distance' },
+        { key: 'highjump', label: 'High Jump', unit: 'distance' },
+        { key: 'triplejump', label: 'Triple Jump', unit: 'distance' },
+        { key: 'shotput', label: 'Shot Put', unit: 'distance' },
+        { key: 'discus', label: 'Discus', unit: 'distance' },
+        { key: 'javelin', label: 'Javelin', unit: 'distance' }
+      ]
+    },
+
+    golf: {
+      label: 'Golf',
+      icon: '⛳',
+      mode: 'measurement',
+      usesClock: false,
+      // A round is one number here. Per-hole scoring against par is a different feature, and
+      // pretending otherwise would mean a course/par model this doesn't have.
+      events: [
+        { key: 'round18', label: '18 Holes', unit: 'score' },
+        { key: 'round9', label: '9 Holes', unit: 'score' },
+        { key: 'putts', label: 'Putts', unit: 'score' }
+      ]
+    },
+
+    bowling: {
+      label: 'Bowling',
+      icon: '🎳',
+      mode: 'measurement',
+      usesClock: false,
+      // Higher is better, unlike every other 'score' event — hence the explicit override.
+      // Frame-by-frame scoring (where a strike's value depends on the next two balls) is a
+      // genuinely different model and isn't attempted here.
+      events: [
+        { key: 'game', label: 'Game', unit: 'score', better: 'higher' },
+        { key: 'series3', label: '3-Game Series', unit: 'score', better: 'higher' }
+      ]
     }
   };
 
@@ -1077,12 +1193,122 @@
   function sportConfig(sport) {
     return SPORTS[sport] || SPORTS[DEFAULT_SPORT];
   }
+  function isMeasurementSport(sport) {
+    return sportConfig(sport).mode === 'measurement';
+  }
   // Every counting field on a player card: tally stats plus each shot type's made/miss keys.
+  // Measurement sports have none — a result carries its own value on the log entry, so there is
+  // nothing to zero and replay.
   function statFieldKeys(sport) {
     var cfg = sportConfig(sport);
+    if (cfg.mode === 'measurement') return [];
     var keys = cfg.tallyStats.map(function (s) { return s.key; });
     cfg.shotTypes.forEach(function (s) { keys.push(s.madeKey, s.missKey); });
     return keys;
+  }
+
+  // ---- Measurement values ----
+
+  function eventMeta(sport, key) {
+    return (sportConfig(sport).events || []).filter(function (e) { return e.key === key; })[0];
+  }
+  // Distance is the only one where a bigger number is better by default; bowling overrides it.
+  function betterIsHigher(ev) {
+    if (!ev) return false;
+    if (ev.better) return ev.better === 'higher';
+    return ev.unit === 'distance';
+  }
+
+  // Accepts what people actually type at a poolside rather than one rigid format:
+  //   1:12.40  ·  72.4  ·  1:12  ·  1.12.40  ·  :58.2
+  // Times are stored as seconds, distances as their plain number, scores as integers. Returns
+  // null on anything it can't read, so the caller can refuse to save rather than store a NaN
+  // that would poison every personal best afterwards.
+  function parseValue(text, unit) {
+    var raw = String(text == null ? '' : text).trim();
+    if (!raw) return null;
+
+    if (unit === 'time') {
+      // Treat . and : as the same separator, so "1.12.40" and "1:12.40" both work — phone
+      // keyboards make the colon awkward and people type what's easy.
+      var parts = raw.replace(/\./g, ':').split(':').filter(function (x) { return x !== ''; });
+      if (!parts.length || parts.length > 3) return null;
+      if (parts.some(function (x) { return !/^\d+$/.test(x); })) return null;
+
+      if (parts.length === 1) return parseInt(parts[0], 10);            // "58"
+      if (parts.length === 2) {
+        // Ambiguous by design: "1:12" is a minute and twelve seconds; "58.2" is fractional
+        // seconds. The original separator decides which.
+        if (raw.indexOf(':') !== -1) return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+        return parseFloat(parts[0] + '.' + parts[1]);
+      }
+      return parseInt(parts[0], 10) * 60 + parseFloat(parts[1] + '.' + parts[2]);
+    }
+
+    if (!/^\d*\.?\d+$/.test(raw)) return null;
+    var n = parseFloat(raw);
+    if (!isFinite(n) || n < 0) return null;
+    return unit === 'score' ? Math.round(n) : n;
+  }
+
+  function formatValue(v, unit) {
+    if (v == null || !isFinite(v)) return '—';
+    if (unit === 'time') {
+      if (v < 60) return (Math.round(v * 100) / 100).toFixed(2);
+      var m = Math.floor(v / 60);
+      var s = v - m * 60;
+      return m + ':' + (s < 10 ? '0' : '') + (Math.round(s * 100) / 100).toFixed(2);
+    }
+    if (unit === 'score') return String(Math.round(v));
+    return (Math.round(v * 100) / 100).toFixed(2) + 'm';
+  }
+
+  // Every recorded result for a player, newest first. Reads straight off the log rather than a
+  // stored field, so a merge from another device is reflected with no recomputation step.
+  function resultEntries(p) {
+    return activeLogEntries(p)
+      .filter(function (e) { return typeof e.value === 'number' && isFinite(e.value); })
+      .slice()
+      .sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+  }
+
+  // Best result per event across a whole season, with how many attempts it took to get there.
+  function seasonBests(season) {
+    var sport = sportOfSeason(season);
+    var cfg = sportConfig(sport);
+    var byAthlete = {};
+
+    season.games.forEach(function (g) {
+      activePlayers(g).forEach(function (p) {
+        var entries = resultEntries(p);
+        if (!entries.length) return;
+        // Same name-based identity the tally sports use for season averages.
+        var key = (p.name || '').trim().toLowerCase();
+        if (!byAthlete[key]) byAthlete[key] = { name: (p.name || '').trim(), events: {} };
+        entries.forEach(function (e) {
+          var ev = eventMeta(sport, e.key);
+          if (!ev) return; // an event the sport no longer defines
+          var slot = byAthlete[key].events[e.key];
+          if (!slot) {
+            slot = byAthlete[key].events[e.key] = { event: ev, best: e.value, latest: e.value, latestTs: e.ts || 0, count: 0 };
+          }
+          slot.count++;
+          var improves = betterIsHigher(ev) ? e.value > slot.best : e.value < slot.best;
+          if (improves) slot.best = e.value;
+          if ((e.ts || 0) > slot.latestTs) { slot.latest = e.value; slot.latestTs = e.ts || 0; }
+        });
+      });
+    });
+
+    // Ordered by the sport's own event list rather than by insertion, so the table reads the
+    // way a heat sheet does.
+    return Object.keys(byAthlete).map(function (k) {
+      var a = byAthlete[k];
+      a.rows = (cfg.events || [])
+        .filter(function (ev) { return a.events[ev.key]; })
+        .map(function (ev) { return a.events[ev.key]; });
+      return a;
+    }).filter(function (a) { return a.rows.length; });
   }
 
   function emptyPlayer(name, tone, sport) {
@@ -1106,13 +1332,17 @@
     if (!p.id) merged.id = 'legacy-p-' + gameId + '-' + idx;
     if (!p.metaUpdatedAt) merged.metaUpdatedAt = LEGACY_META_TS;
     merged.removed = p.removed || false;
+    // Copy the entry and backfill, rather than rebuilding it from a list of known fields. This
+    // used to whitelist id/ts/key/result/label/removed, which silently destroyed measurement
+    // results: their `value` wasn't on the list, so every sanitize() — and sanitize() runs at the
+    // end of every merge and on every load — stripped it, and the result vanished from the UI
+    // with no error anywhere. A whitelist here is a trap for any field added later.
     merged.log = (merged.log || []).map(function (e, i) {
-      return {
-        id: e.id || ('legacy-l-' + merged.id + '-' + i),
-        ts: e.ts != null ? e.ts : i,
-        key: e.key, result: e.result, label: e.label,
-        removed: e.removed || false
-      };
+      var entry = Object.assign({}, e);
+      entry.id = e.id || ('legacy-l-' + merged.id + '-' + i);
+      entry.ts = e.ts != null ? e.ts : i;
+      entry.removed = e.removed || false;
+      return entry;
     });
     return merged;
   }
@@ -1934,10 +2164,16 @@
   // lacrosse count goals plus assists, basketball weights shots by value.
   function points(p, sport) {
     var cfg = sportConfig(sport);
+    // Measurement sports have no single headline number — a swimmer's day is several unrelated
+    // times, and picking one to enlarge would be arbitrary. The count of results recorded is the
+    // honest summary.
+    if (cfg.mode === 'measurement') return resultEntries(p).length;
     return cfg.primary.compute(p, cfg);
   }
   function primaryLabel(sport) {
-    return sportConfig(sport).primary.label;
+    var cfg = sportConfig(sport);
+    if (cfg.mode === 'measurement') return 'results';
+    return cfg.primary.label;
   }
   function pct(made, attempts) {
     if (attempts === 0) return '—';
@@ -2143,8 +2379,44 @@
   });
 
   // ---------- Season screen (games list) ----------
+
+  // Measurement sports don't average — a swimmer's season is a set of personal bests and whether
+  // they're moving. Averaging times across different events would be meaningless.
+  function renderSeasonBests(season, container) {
+    var athletes = seasonBests(season);
+    if (!athletes.length) { container.innerHTML = ''; return; }
+
+    container.innerHTML =
+      '<h3 class="avg-heading">Personal Bests</h3>' +
+      athletes.map(function (a) {
+        return '<div class="pb-athlete">' +
+            '<div class="pb-name">' + escapeHtml(a.name) + '</div>' +
+            '<div class="avg-scroll"><table class="avg-table">' +
+              '<thead><tr><th>Event</th><th>Best</th><th>Latest</th><th>Tries</th></tr></thead>' +
+              '<tbody>' + a.rows.map(function (r) {
+                // Flagged when the most recent swim *is* the best — the thing a parent actually
+                // wants to see on the drive home.
+                var atBest = r.latest === r.best && r.count > 1;
+                return '<tr>' +
+                    '<td class="avg-name">' + escapeHtml(r.event.label) + '</td>' +
+                    '<td><b>' + escapeHtml(formatValue(r.best, r.event.unit)) + '</b>' +
+                      (atBest ? ' <span class="pb-flag">PB</span>' : '') + '</td>' +
+                    '<td>' + escapeHtml(formatValue(r.latest, r.event.unit)) + '</td>' +
+                    '<td>' + r.count + '</td>' +
+                  '</tr>';
+              }).join('') +
+              '</tbody>' +
+            '</table></div>' +
+          '</div>';
+      }).join('');
+  }
+
   function renderSeasonAverages(season) {
     var container = document.getElementById('seasonAverages');
+    if (isMeasurementSport(sportOfSeason(season))) {
+      renderSeasonBests(season, container);
+      return;
+    }
     var rows = seasonAverages(season);
     if (rows.length === 0) {
       container.innerHTML = '';
@@ -2275,6 +2547,14 @@
     clockBtn.classList.toggle('paused', !clockRunning);
     clockBtn.style.display = sportConfig(activeSport()).usesClock ? '' : 'none';
 
+    // A swim meet or a bowling night has no "us vs them" score and no win/loss for the person
+    // being tracked — the results are the whole record. Hiding these beats showing controls that
+    // mean nothing, and the game bar disappears entirely once its only other control (the clock)
+    // is gone too.
+    var measurement = isMeasurementSport(activeSport());
+    document.getElementById('resultToggle').style.display = measurement ? 'none' : '';
+    document.getElementById('gameBar').style.display = measurement ? 'none' : '';
+
     var cardsEl = document.getElementById('cards');
 
     // A change pushed from the other device rebuilds every card, which would otherwise throw away
@@ -2322,7 +2602,7 @@
         strip.innerHTML =
           '<button class="bench-main" data-expand="' + idx + '" aria-label="Show full stats for ' + escapeHtml(p.name) + '">' +
             '<span class="bench-name">' + escapeHtml(p.name) + '</span>' +
-            '<span class="bench-stat"><b>' + points(p, sport) + '</b> ' + escapeHtml(cfg.primary.label.toUpperCase()) + '</span>' +
+            '<span class="bench-stat"><b>' + points(p, sport) + '</b> ' + escapeHtml(primaryLabel(sport).toUpperCase()) + '</span>' +
             '<span class="bench-stat">' + formatTime(currentPlayTime(p)) + '</span>' +
           '</button>' +
           '<button class="bench-sub" data-sub="' + idx + '">Sub In</button>';
@@ -2340,7 +2620,7 @@
           (p.onCourt ? '<span class="on-pill">On</span>' : '') +
           (!p.onCourt && anyOnCourt ? '<button class="icon-btn" data-collapse="' + idx + '" title="Collapse" aria-label="Collapse ' + escapeHtml(p.name) + '">&minus;</button>' : '') +
           (visibleCount > 1 ? '<button class="remove-btn" data-remove="' + idx + '" aria-label="Remove player" title="Remove player">&times;</button>' : '') +
-          '<div class="score-block"><div class="score">' + points(p, sport) + '</div><div class="score-label">' + escapeHtml(cfg.primary.label) + '</div></div>' +
+          '<div class="score-block"><div class="score">' + points(p, sport) + '</div><div class="score-label">' + escapeHtml(primaryLabel(sport)) + '</div></div>' +
         '</div>' +
         // Totals the buttons below can't show on their own. Basketball supplies its own line
         // (FG aggregates 2s and 3s, a convention nothing generic could infer); every other sport
@@ -2350,23 +2630,28 @@
             return (i ? '<span class="sep">&middot;</span>' : '') + '<span><b>' + part + '</b></span>';
           }).join('') +
         '</div>' +
-        '<div class="extra-stats">' +
-          (cfg.usesClock ? subBtnHtml(idx, p) : '') +
-          cfg.tallyStats.map(function (s) {
-            return statBtnHtml(idx, s.key, s.label, p[s.key], s.tone);
-          }).join('') +
-        '</div>' +
-        '<div class="shot-groups">' +
-          cfg.shotTypes.map(function (s) {
-            var attempts = p[s.madeKey] + p[s.missKey];
-            return shotGroupHtml(idx, s, p[s.madeKey], p[s.missKey], attempts);
-          }).join('') +
-        '</div>' +
+        (cfg.mode === 'measurement'
+          ? resultsBlockHtml(idx, p, sport, cfg)
+          : '<div class="extra-stats">' +
+              (cfg.usesClock ? subBtnHtml(idx, p) : '') +
+              cfg.tallyStats.map(function (s) {
+                return statBtnHtml(idx, s.key, s.label, p[s.key], s.tone);
+              }).join('') +
+            '</div>' +
+            '<div class="shot-groups">' +
+              cfg.shotTypes.map(function (s) {
+                var attempts = p[s.madeKey] + p[s.missKey];
+                return shotGroupHtml(idx, s, p[s.madeKey], p[s.missKey], attempts);
+              }).join('') +
+            '</div>'
+        ) +
         '<div class="card-foot">' +
           '<button class="undo-btn" data-undo="' + idx + '"' + (activeLogEntries(p).length === 0 ? ' disabled' : '') + '>Undo last</button>' +
-          '<button class="log-toggle" data-logtoggle="' + idx + '">' + (p.logOpen ? 'Hide' : 'Show') + ' shot log</button>' +
+          (cfg.mode === 'measurement' ? '' :
+            '<button class="log-toggle" data-logtoggle="' + idx + '">' + (p.logOpen ? 'Hide' : 'Show') + ' shot log</button>') +
         '</div>' +
-        '<div class="log' + (p.logOpen ? ' open' : '') + '" data-log="' + idx + '">' + logHtml(p) + '</div>';
+        (cfg.mode === 'measurement' ? '' :
+          '<div class="log' + (p.logOpen ? ' open' : '') + '" data-log="' + idx + '">' + logHtml(p) + '</div>');
 
       cardsEl.appendChild(card);
     });
@@ -2456,6 +2741,22 @@
       });
     });
 
+    cardsEl.querySelectorAll('[data-resultsave]').forEach(function (el) {
+      el.addEventListener('click', function () { handleAddResult(+el.dataset.resultsave); });
+    });
+    // Enter submits, because the on-screen keyboard's return key is right there and reaching for
+    // a button after typing a time is the slow part.
+    cardsEl.querySelectorAll('[data-resultvalue]').forEach(function (el) {
+      el.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); handleAddResult(+el.dataset.resultvalue); }
+      });
+    });
+    cardsEl.querySelectorAll('[data-delresult]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        handleRemoveResult(+el.dataset.idx, el.dataset.delresult);
+      });
+    });
+
     if (caret) {
       var refocus = cardsEl.querySelector('.name-input[data-idx="' + caret.idx + '"]');
       if (refocus) {
@@ -2484,11 +2785,55 @@
   // FG); otherwise it's made/attempted for each shot type, and nothing at all for a sport with
   // no shot types, where the tally buttons already show every number there is.
   function cardSummary(p, cfg) {
+    if (cfg.mode === 'measurement') {
+      var n = resultEntries(p).length;
+      return n ? [n + (n === 1 ? ' result' : ' results') + ' this meet'] : ['No results yet'];
+    }
     if (cfg.summary) return cfg.summary(p);
     return cfg.shotTypes.map(function (s) {
       var att = p[s.madeKey] + p[s.missKey];
       return p[s.madeKey] + '/' + att + ' ' + s.label;
     });
+  }
+
+  // The measurement equivalent of the tally buttons: what's already been recorded, and one row
+  // to add the next one. No tap-counters — a result is typed once and read back.
+  function resultsBlockHtml(idx, p, sport, cfg) {
+    var entries = resultEntries(p);
+
+    var rows = entries.map(function (e) {
+      var ev = eventMeta(sport, e.key);
+      return '<div class="result-row">' +
+          '<span class="result-event">' + escapeHtml(ev ? ev.label : e.key) + '</span>' +
+          '<span class="result-value">' + escapeHtml(formatValue(e.value, ev ? ev.unit : 'score')) + '</span>' +
+          '<button class="icon-btn danger" data-delresult="' + e.id + '" data-idx="' + idx +
+            '" title="Remove" aria-label="Remove result">&times;</button>' +
+        '</div>';
+    }).join('');
+
+    // Placeholder is worth getting right — it's the only hint about accepted formats, and the
+    // parser is deliberately forgiving about all of them.
+    var firstUnit = (cfg.events[0] || {}).unit;
+    var placeholder = firstUnit === 'time' ? 'e.g. 1:12.40 or 72.4'
+      : firstUnit === 'distance' ? 'e.g. 4.15 (metres)'
+      : 'e.g. 94';
+
+    return '<div class="results">' +
+        (rows || '<div class="log-empty">Nothing recorded yet</div>') +
+        '<div class="result-add">' +
+          '<select data-resultevent="' + idx + '" aria-label="Event">' +
+            cfg.events.map(function (ev) {
+              return '<option value="' + ev.key + '">' + escapeHtml(ev.label) + '</option>';
+            }).join('') +
+          '</select>' +
+          // inputmode rather than type=number: a numeric keypad, but colons and dots still
+          // typeable, and no browser spinner mangling "1:12.40".
+          '<input type="text" inputmode="decimal" autocomplete="off" data-resultvalue="' + idx +
+            '" placeholder="' + escapeHtml(placeholder) + '" aria-label="Result" />' +
+          '<button class="result-save" data-resultsave="' + idx + '">Add</button>' +
+        '</div>' +
+        '<div class="result-error" data-resulterror="' + idx + '"></div>' +
+      '</div>';
   }
 
   function statBtnHtml(idx, key, label, count, tone) {
@@ -2549,6 +2894,53 @@
       removed: false
     });
     recomputeFromLog(p, sport);
+    save();
+    render();
+  }
+
+  // A measurement result is just a log entry carrying a value, so it inherits the union-by-id
+  // merge and the tombstone-on-delete rule for free — two phones at the same meet end up with
+  // both entries, and a removed one stays removed.
+  function handleAddResult(idx) {
+    var cardsEl = document.getElementById('cards');
+    var select = cardsEl.querySelector('[data-resultevent="' + idx + '"]');
+    var input = cardsEl.querySelector('[data-resultvalue="' + idx + '"]');
+    var errEl = cardsEl.querySelector('[data-resulterror="' + idx + '"]');
+    if (!select || !input) return;
+
+    var sport = activeSport();
+    var ev = eventMeta(sport, select.value);
+    if (!ev) return;
+
+    var value = parseValue(input.value, ev.unit);
+    if (value === null) {
+      // Refused rather than stored as NaN — one bad value would otherwise poison every personal
+      // best computed from this event afterwards.
+      errEl.textContent = ev.unit === 'time'
+        ? "Couldn't read that time. Try 1:12.40, or 72.4 for seconds."
+        : ev.unit === 'distance' ? "Couldn't read that distance. Try 4.15 for metres."
+        : "Couldn't read that score. Whole numbers only.";
+      input.focus();
+      return;
+    }
+    errEl.textContent = '';
+
+    var p = activeGame().players[idx];
+    p.log.push({
+      id: uid(), ts: now(), key: ev.key, value: value,
+      result: 'make', label: ev.label + ' ' + formatValue(value, ev.unit),
+      removed: false,
+    });
+    input.value = '';
+    save();
+    render();
+  }
+
+  function handleRemoveResult(idx, entryId) {
+    var p = activeGame().players[idx];
+    var entry = (p.log || []).filter(function (e) { return e.id === entryId; })[0];
+    if (!entry) return;
+    entry.removed = true; // tombstone, never splice
     save();
     render();
   }
