@@ -151,6 +151,41 @@ Two more rules keep the averages honest:
   cards (rosters merge by id, which can't tell them apart) — their stats add together, but the game
   counts once.
 
+### Importing a schedule
+
+Staging a season by hand is fine for a dozen games; a league's TeamSnap or website calendar feed
+is usually faster. On the season screen, **+ Import from calendar feed** takes an `.ics` URL and
+turns each event into a game — its name from the event title, its date/time from `DTSTART`.
+
+What it does and doesn't do:
+
+- **Re-syncing is safe.** Events are matched by their calendar UID, so syncing the same feed again
+  updates existing games' names/dates (a reschedule shows up) rather than duplicating them.
+- **Never touches a scored game's players, log, score, or result.** Only the name and date/time
+  refresh from the feed; everything you've recorded stays exactly as recorded.
+- **Never deletes anything.** An event that disappears from the feed (the league cancelled it)
+  just stops being synced — the game it created stays until you delete it yourself. This also
+  means a game you delete on purpose won't come back on the next sync: the season remembers every
+  UID it has ever imported (`icsSeenUids`), independently of whether a game for it still exists.
+- **No recurring-event expansion.** A feed that uses one `RRULE` instead of listing each game as
+  its own event yields a single game at that rule's own start time — every real league schedule
+  we've seen lists games individually, so this hasn't been a practical problem.
+- **No timezone database.** A UTC (`...Z`) timestamp is read correctly; anything else — floating
+  time or a named `TZID` — is read as local time in whoever's browser is importing it. Right for
+  floating time by spec, an approximation for a `TZID`, and usually correct since the feed and the
+  family are normally in the same timezone. Worth a glance after the first import.
+
+The fetch happens server-side (`GET /api/ical-proxy`, see `server/icalProxy.js`), not from the
+browser — calendar hosts don't send CORS headers permitting a cross-origin `fetch()`, so there's
+no way to do this client-side. That makes the endpoint "authenticated user asks the server to
+fetch a URL of their choosing," which is SSRF (CWE-918) if left unguarded: it could otherwise be
+pointed at anything reachable from the container but not from a browser — router admin pages,
+other services on the LAN, cloud metadata endpoints. The proxy resolves the hostname once, rejects
+private/loopback/link-local addresses, and connects to that literal resolved address rather than
+the hostname again — closing the DNS-rebinding gap where a second lookup could return something
+different from the one that passed the check. Redirects are re-validated the same way, one hop at
+a time, since a URL that passes the check can still redirect somewhere that wouldn't.
+
 ## Tracking a game
 
 Each player card carries:
@@ -192,10 +227,12 @@ state
     ├── activeSeasonId
     └── seasons[]
         ├── sport            which stat schema this season uses (see Sports)
+        ├── icsUrl, icsLastSyncedAt, icsSeenUids[]   calendar feed import (see below)
         └── games[]
             ├── name, createdAt (the game's date/time — editable), updatedAt
             ├── finalized, result ('W' | 'L' | null)
             ├── teamScore, oppScore, clockRunning
+            ├── icsUid?          set only on a game created by a feed import
             └── players[]
                 ├── id, name, tone, removed, metaUpdatedAt
                 ├── onCourt, subInAt, timeMs
@@ -464,10 +501,12 @@ There is no build step — `public/index.html` is served as-is. In a local dev l
 
 ### Tests
 
-`test/` holds two end-to-end browser checks (see `test/README.md`). The important one is
-`sync-check.js`: it drives two independent browser sessions scoring the same game concurrently
-and asserts both converge on the union of the taps. **Run it after any change to the merge code,
-the stat schema, or the state endpoints** — that contract fails invisibly until a real game.
+`test/` holds ten end-to-end browser checks plus four non-browser suites (see `test/README.md`).
+The important one is `sync-check.js`: it drives two independent browser sessions scoring the same
+game concurrently and asserts both converge on the union of the taps. **Run it after any change to
+the merge code, the stat schema, or the state endpoints** — that contract fails invisibly until a
+real game. `tombstone-check.js` is its counterpart for deletion: that deleting a kid or a season
+survives a merge with a device that still has it.
 
 ---
 

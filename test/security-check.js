@@ -91,6 +91,32 @@ const check = (label, ok, detail) => {
   const stateAfter = await req('GET', '/api/state', { cookie: clearedCookie });
   check('logout invalidates the session', stateAfter.status === 401, 'status ' + stateAfter.status);
 
+  console.log('== calendar feed import (SSRF guard) ==');
+
+  // No auth, no proxying — same boundary as every other family-scoped endpoint.
+  const icsNoAuth = await req('GET', '/api/ical-proxy?url=http://example.com/x.ics');
+  check('ical-proxy requires a session', icsNoAuth.status === 401, 'status ' + icsNoAuth.status);
+
+  // IP literals reject on the guard's own logic before any network call, so these exercise the
+  // real route -> middleware -> handler -> guard wiring without needing a reachable target.
+  // Range coverage for the guard itself lives in ical-guard-check.js, which needs no server.
+  const privateTargets = [
+    ['loopback', 'http://127.0.0.1:9/'],
+    ['a LAN address', 'http://192.168.1.1/'],
+    ['cloud metadata', 'http://169.254.169.254/latest/meta-data/'],
+    ['IPv6 loopback', 'http://[::1]/'],
+  ];
+  for (const [label, url] of privateTargets) {
+    const r = await req('GET', '/api/ical-proxy?url=' + encodeURIComponent(url), { cookie });
+    check(`ical-proxy rejects ${label}`, r.status === 400, `status ${r.status} for ${url}`);
+  }
+
+  const badScheme = await req('GET', '/api/ical-proxy?url=' + encodeURIComponent('file:///etc/passwd'), { cookie });
+  check('ical-proxy rejects a non-http(s) scheme', badScheme.status === 400, 'status ' + badScheme.status);
+
+  const noUrl = await req('GET', '/api/ical-proxy', { cookie });
+  check('ical-proxy requires a url param', noUrl.status === 400, 'status ' + noUrl.status);
+
   console.log('== rate limiting ==');
 
   // Regression: the limiter counts *failures*, and a handler that never recorded one meant the

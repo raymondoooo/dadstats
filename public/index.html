@@ -239,6 +239,22 @@
   }
   .schedule-btn:active { transform: scale(0.98); }
 
+  .ics-connected {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px 12px; margin-top: 4px;
+  }
+  .ics-url {
+    flex: 1 1 160px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 0.78rem; color: var(--ink-muted);
+  }
+  .ics-status { flex-basis: 100%; font-size: 0.72rem; color: var(--ink-muted); }
+  .ics-connected button {
+    font: inherit; font-weight: 700; font-size: 0.76rem; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
+    background: transparent; color: var(--ink-muted);
+  }
+
   .profile-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -804,6 +820,30 @@
     <button class="back-btn" id="seasonBackBtn">&larr; <span id="seasonBackLabel"></span></button>
     <h2 class="screen-title" id="seasonTitle"></h2>
     <button class="schedule-btn" id="scheduleGameBtn">+ Schedule Game</button>
+
+    <!-- Inline for the same reason the season/profile forms are: a modal isn't worth building
+         for one field. Only one of icsForm/icsConnected/icsAddBtn is visible at a time. -->
+    <button class="add-tile" id="icsAddBtn">+ Import from calendar feed</button>
+    <form class="season-form" id="icsForm" hidden>
+      <label for="icsUrlInput">Calendar feed URL</label>
+      <input type="url" id="icsUrlInput" placeholder="https://... (TeamSnap, league site, etc.)" />
+      <div class="season-form-hint">
+        Reads each event's name and date/time and adds it as a game. Never touches a game you've
+        already scored, and never deletes one on its own — if the league cancels a game, remove
+        it here yourself.
+      </div>
+      <div class="season-form-actions">
+        <button type="submit">Save &amp; sync</button>
+        <button type="button" class="ghost" id="icsFormCancel">Cancel</button>
+      </div>
+    </form>
+    <div class="ics-connected" id="icsConnected" hidden>
+      <span class="ics-url" id="icsUrlDisplay"></span>
+      <button type="button" id="icsSyncBtn">Sync now</button>
+      <button type="button" id="icsEditBtn">Change</button>
+      <span class="ics-status" id="icsStatus"></span>
+    </div>
+
     <div id="seasonAverages"></div>
     <div class="game-list" id="gameList"></div>
   </div>
@@ -1451,7 +1491,10 @@
   // Season Averages are already computed per season, so the stat schema lines up with the level
   // that owns it.
   function freshSeason(name, sport) {
-    return { id: uid(), name: name, sport: sport || DEFAULT_SPORT, games: [] };
+    return {
+      id: uid(), name: name, sport: sport || DEFAULT_SPORT, games: [],
+      icsUrl: '', icsSeenUids: [], icsLastSyncedAt: null
+    };
   }
 
   function freshGame(name, profileName, sport) {
@@ -1585,6 +1628,7 @@
         // a migration step means it also covers a season arriving from a device still running
         // older code, which would otherwise render with no stat buttons at all.
         if (!s.sport || !SPORTS[s.sport]) s.sport = DEFAULT_SPORT;
+        if (!s.icsSeenUids) s.icsSeenUids = [];
         var seasonSport = s.sport;
         s.games.forEach(function (g) {
           g.players = (g.players || []).map(function (p, idx) { return withDefaults(p, g.id, idx, seasonSport); });
@@ -1976,6 +2020,14 @@
           } else {
             var target = existing.seasons.filter(function (es) { return es.id === s.id; })[0];
             target.removed = !!(target.removed || s.removed);
+            // Unioned as a set, unlike icsUrl/icsLastSyncedAt below (which stay ordinary
+            // last-writer-wins scalars, same as name/sport): this one's whole job is remembering
+            // every UID either device has ever imported, so a device that missed an import must
+            // still learn about it, or a game deleted on one device could reappear from the
+            // other's next sync. See syncIcsFeed.
+            var seenSet = {};
+            (target.icsSeenUids || []).concat(s.icsSeenUids || []).forEach(function (u) { seenSet[u] = true; });
+            target.icsSeenUids = Object.keys(seenSet);
             mergeGamesInto(target, s);
           }
         });
@@ -2629,6 +2681,148 @@
       '</table></div>';
   }
 
+  // ---------- Calendar feed import ----------
+  //
+  // A minimal RFC5545 reader: only what's needed to turn a league's calendar feed into games —
+  // UID, SUMMARY and DTSTART of each VEVENT. Deliberately not a full parser:
+  //  - No RRULE expansion. Real team schedules list every game as its own VEVENT rather than one
+  //    recurring rule, so this is the case that matters; a feed that does use RRULE just yields
+  //    one game at the rule's own DTSTART instead of every occurrence.
+  //  - No timezone database. DTSTART with a trailing Z is read as UTC. Everything else — floating
+  //    time, or a named TZID we have no table for — is read as local time in whoever's browser is
+  //    importing it. For floating time that's exactly what RFC5545 specifies; for a TZID it's an
+  //    approximation that's usually right, since the feed almost always belongs to the same
+  //    timezone as the family watching the game. Worth checking the date after a first import.
+  function parseIcs(text) {
+    var rawLines = String(text || '').split(/\r\n|\n|\r/);
+    // RFC5545 §3.1: a line starting with a single space or tab continues the previous line.
+    var lines = [];
+    rawLines.forEach(function (line) {
+      if ((line.charAt(0) === ' ' || line.charAt(0) === '\t') && lines.length) {
+        lines[lines.length - 1] += line.slice(1);
+      } else {
+        lines.push(line);
+      }
+    });
+
+    function unescapeText(v) {
+      return v.replace(/\\n/gi, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\');
+    }
+
+    function parseDate(value, params) {
+      var m;
+      if ((params.VALUE || '').toUpperCase() === 'DATE' || /^\d{8}$/.test(value)) {
+        m = /^(\d{4})(\d{2})(\d{2})$/.exec(value);
+        return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+      }
+      m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/.exec(value);
+      if (!m) return null;
+      var y = Number(m[1]), mo = Number(m[2]) - 1, d = Number(m[3]);
+      var h = Number(m[4]), mi = Number(m[5]), s = Number(m[6]);
+      return m[7] === 'Z' ? new Date(Date.UTC(y, mo, d, h, mi, s)) : new Date(y, mo, d, h, mi, s);
+    }
+
+    var events = [];
+    var cur = null;
+    lines.forEach(function (raw) {
+      var line = raw.replace(/\s+$/, '');
+      if (!line) return;
+      if (/^BEGIN:VEVENT$/i.test(line)) { cur = {}; return; }
+      if (/^END:VEVENT$/i.test(line)) {
+        // A UID-less event falls back to start+summary — not spec-perfect, but stable enough to
+        // dedupe repeat imports of the same feed, which is the only thing this key is used for.
+        if (cur && cur.start && (cur.status || '').toUpperCase() !== 'CANCELLED') {
+          events.push({
+            uid: cur.uid || (cur.startRaw + '|' + (cur.summary || '')),
+            summary: (cur.summary || '').trim(),
+            start: cur.start
+          });
+        }
+        cur = null;
+        return;
+      }
+      if (!cur) return; // outside a VEVENT (VCALENDAR/VTIMEZONE headers etc.) — not needed here
+      var idx = line.indexOf(':');
+      if (idx === -1) return;
+      var head = line.slice(0, idx);
+      var value = line.slice(idx + 1);
+      var headParts = head.split(';');
+      var name = headParts[0].toUpperCase();
+      var params = {};
+      headParts.slice(1).forEach(function (p) {
+        var eq = p.indexOf('=');
+        if (eq !== -1) params[p.slice(0, eq).toUpperCase()] = p.slice(eq + 1);
+      });
+      if (name === 'UID') cur.uid = value.trim();
+      else if (name === 'SUMMARY') cur.summary = unescapeText(value);
+      else if (name === 'STATUS') cur.status = value.trim();
+      else if (name === 'DTSTART') { cur.startRaw = value.trim(); cur.start = parseDate(cur.startRaw, params); }
+    });
+    return events;
+  }
+
+  // Reconciles a feed against a season's games. New events become games; events matching an
+  // already-imported game (by icsUid) refresh only that game's name/date, never its players, log,
+  // score or result — a re-sync after the game's been scored can't undo anyone's work. An event
+  // whose UID was imported before but has no live game now (the user deleted it) is deliberately
+  // left alone: icsSeenUids is the memory that stops it from being recreated. See the merge note
+  // on icsSeenUids for why that memory has to be unioned, not just copied, across devices.
+  function syncIcsFeed(season) {
+    var statusEl = document.getElementById('icsStatus');
+    statusEl.textContent = 'Syncing…';
+    return fetch('/api/ical-proxy?url=' + encodeURIComponent(season.icsUrl), { credentials: 'same-origin' })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error((res.body && res.body.error) || 'Could not fetch that feed.');
+        var events = parseIcs(res.body.text);
+        if (!events.length) throw new Error('No events found in that feed.');
+
+        season.icsSeenUids = season.icsSeenUids || [];
+        var seen = {};
+        season.icsSeenUids.forEach(function (u) { seen[u] = true; });
+        var byUid = {};
+        season.games.forEach(function (g) { if (g.icsUid) byUid[g.icsUid] = g; });
+
+        var added = 0, updated = 0, skipped = 0;
+        var pr = activeProfile();
+        // Caps one sync's damage if a feed is huge or malformed — a season's real schedule is a
+        // few dozen games at most.
+        events.slice(0, 500).forEach(function (ev) {
+          var name = ev.summary || 'Game';
+          var existing = byUid[ev.uid];
+          if (existing) {
+            if (existing.name !== name || new Date(existing.createdAt).getTime() !== ev.start.getTime()) {
+              existing.name = name;
+              existing.createdAt = ev.start.toISOString();
+              existing.updatedAt = nowIso();
+              updated++;
+            }
+            return;
+          }
+          if (seen[ev.uid]) { skipped++; return; }
+          var game = freshGame(name, pr.name, sportOfSeason(season));
+          game.createdAt = ev.start.toISOString();
+          game.icsUid = ev.uid;
+          season.games.push(game);
+          seen[ev.uid] = true;
+          season.icsSeenUids.push(ev.uid);
+          added++;
+        });
+        season.icsLastSyncedAt = nowIso();
+        save();
+        renderSeasonScreen();
+        var parts = [];
+        if (added) parts.push(added + ' added');
+        if (updated) parts.push(updated + ' updated');
+        if (skipped) parts.push(skipped + ' skipped (deleted since last sync)');
+        statusEl.textContent = 'Synced ' + formatDate(season.icsLastSyncedAt) +
+          (parts.length ? ' — ' + parts.join(', ') : ' — no changes');
+      })
+      .catch(function (err) {
+        statusEl.textContent = (err && err.message) || 'Sync failed.';
+      });
+  }
+
   function gameRowHtml(g) {
     var status = gameStatusInfo(g);
     var scoreHtml = (g.teamScore == null && g.oppScore == null) ? '' :
@@ -2650,6 +2844,7 @@
     document.getElementById('seasonBackLabel').textContent = pr.name;
     document.getElementById('seasonTitle').innerHTML = escapeHtml(season.name) + recordHtml(seasonRecord(season));
     renderSeasonAverages(season);
+    renderIcsPanel(season);
 
     var sortedGames = season.games.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
     var list = document.getElementById('gameList');
@@ -2678,6 +2873,58 @@
     save();
     render();
   }
+
+  var icsAddBtn = document.getElementById('icsAddBtn');
+  var icsForm = document.getElementById('icsForm');
+  var icsUrlInput = document.getElementById('icsUrlInput');
+  var icsConnected = document.getElementById('icsConnected');
+
+  // Exactly one of the three is visible: the add button (nothing set up), the form (setting up
+  // or editing), or the connected strip (set up, form closed).
+  function renderIcsPanel(season) {
+    var formOpen = !icsForm.hidden;
+    icsAddBtn.hidden = formOpen || !!season.icsUrl;
+    icsConnected.hidden = formOpen || !season.icsUrl;
+    if (!formOpen && season.icsUrl) {
+      document.getElementById('icsUrlDisplay').textContent = season.icsUrl;
+      document.getElementById('icsStatus').textContent = season.icsLastSyncedAt
+        ? 'Last synced ' + formatDate(season.icsLastSyncedAt)
+        : 'Not synced yet';
+    }
+  }
+
+  function openIcsForm(prefill) {
+    icsForm.hidden = false;
+    icsUrlInput.value = prefill || '';
+    renderIcsPanel(activeSeasonOf(activeProfile()));
+    icsUrlInput.focus();
+  }
+  function closeIcsForm() {
+    icsForm.hidden = true;
+    icsUrlInput.value = '';
+    renderIcsPanel(activeSeasonOf(activeProfile()));
+  }
+
+  icsAddBtn.addEventListener('click', function () { openIcsForm(''); });
+  document.getElementById('icsEditBtn').addEventListener('click', function () {
+    openIcsForm(activeSeasonOf(activeProfile()).icsUrl);
+  });
+  document.getElementById('icsFormCancel').addEventListener('click', closeIcsForm);
+
+  icsForm.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var url = icsUrlInput.value.trim();
+    if (!url) { icsUrlInput.focus(); return; }
+    var season = activeSeasonOf(activeProfile());
+    season.icsUrl = url;
+    save();
+    closeIcsForm();
+    syncIcsFeed(season);
+  });
+
+  document.getElementById('icsSyncBtn').addEventListener('click', function () {
+    syncIcsFeed(activeSeasonOf(activeProfile()));
+  });
 
   document.getElementById('seasonBackBtn').addEventListener('click', function () {
     state.nav.screen = 'profile';
