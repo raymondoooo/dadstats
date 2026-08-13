@@ -134,6 +134,25 @@ else
   docker logs "$NAME" 2>&1 | tail -15
 fi
 
+echo "== version reporting =="
+
+# CI stamps APP_VERSION from the git tag, which carries a leading `v`. Both display sites prefix
+# their own, so an unnormalized value renders as "vv0.3.0" — cosmetic, but it lands on the login
+# screen of every install and is invisible in any local build, where the fallback is package.json's
+# bare version.
+docker rm -f "$NAME" >/dev/null 2>&1
+docker run -d --name "$NAME" -p "$PORT:3211" -e APP_VERSION=v9.9.9 "$IMAGE" >/dev/null
+if wait_healthy "$NAME" 45; then
+  reported=$(curl -sf "http://localhost:$PORT/api/health" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+  if [ "$reported" = "9.9.9" ]; then
+    pass "health reports a bare semver when the tag is v-prefixed"
+  else
+    fail "health reports '$reported', expected '9.9.9' (leading v not stripped)"
+  fi
+else
+  fail "container did not start for the version check"
+fi
+
 echo
 if [ "$fails" -eq 0 ]; then echo "PASS"; else echo "FAIL ($fails)"; fi
 exit "$fails"

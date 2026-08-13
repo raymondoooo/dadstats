@@ -23,7 +23,11 @@ const INSTANCE_ID = loadOrCreateInstanceId();
 // Surfaced in the app footer so "which build is this?" is answerable without shelling into the
 // container — the question that prompted adding it. CI stamps the tag at build time; a local
 // build falls back to package.json and is labelled dev.
-const APP_VERSION = process.env.APP_VERSION || require('../package.json').version || 'dev';
+// CI stamps this from the git tag, which is `v0.3.0` — the leading `v` is stripped here rather
+// than at each display site, so /api/health always reports a bare semver and callers are free to
+// prefix it themselves (both the footer and the admin page do).
+const APP_VERSION = (process.env.APP_VERSION || require('../package.json').version || 'dev')
+  .replace(/^v(?=\d)/, '');
 
 const app = express();
 
