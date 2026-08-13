@@ -8,7 +8,7 @@
 //
 //   APP_URL=http://localhost:3270 ADMIN_PASSWORD=... node test/measurement-check.js
 const { chromium } = require('playwright');
-const { provisionFamily, APP_URL: URL } = require('./helpers');
+const { provisionFamily, addProfile, APP_URL: URL } = require('./helpers');
 
 const SHOTS = __dirname + '/screenshots';
 
@@ -38,10 +38,9 @@ const SHOTS = __dirname + '/screenshots';
   await page.fill('#loginPassword', password);
   await page.click('#loginForm button[type=submit]');
 
-  await page.waitForSelector('#addProfileBtn', { timeout: 10000 });
-  dialogQueue.push('Swimmer');
-  await page.click('#addProfileBtn');
-  await page.waitForSelector('[data-openseason]', { timeout: 10000 });
+  // Left on the default so the swimming season added below is created through the season form,
+  // exercising the tally -> measurement transition rather than starting already in it.
+  await addProfile(page, 'Swimmer', 'basketball');
 
   // --- Swimming season ---
   await page.click('#addSeasonBtn');

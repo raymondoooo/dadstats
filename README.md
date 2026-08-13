@@ -125,8 +125,8 @@ Kids & Teams  →  Seasons  →  Games  →  Tracker
 - **Games** — that season's games sorted soonest-first, plus a Season Averages table.
 - **Tracker** — one game: scoreboard, clock, and a card per player.
 
-Every level supports rename and delete, and you can never delete the last profile or the last
-season (the delete control disappears rather than erroring).
+Every level supports rename and delete, including deleting the last one — an account with no kids,
+or a kid with no seasons, shows an empty prompt rather than being prevented.
 
 ## Game lifecycle
 
@@ -208,9 +208,11 @@ Three rules matter more than the rest:
 1. **Stat counters are derived, never authoritative.** Every tap appends a uniquely-id'd entry to
    `log[]`, and the counters are recomputed from it (`recomputeFromLog`). Undo tombstones the
    entry (`removed: true`) instead of popping it.
-2. **Deletes are tombstones, not splices.** Removed players and undone log entries stay in the
-   array flagged `removed`. A merge can't tell "never existed here" from "was deleted here", so
-   anything spliced out would simply be resurrected by the next sync from another device.
+2. **Deletes are tombstones, not splices.** Removed players, undone log entries, deleted seasons
+   and deleted profiles all stay in their array flagged `removed`. A merge can't tell "never
+   existed here" from "was deleted here", so anything spliced out is simply resurrected by the next
+   sync from another device. Everything user-facing reads through `activePlayers`,
+   `activeLogEntries`, `activeSeasons` and `activeProfiles`, which filter the tombstones out.
 3. **A player's identity across games is their name.** There is no season-level roster object —
    every game holds its own independent cards, and `player.id` is unique per card, not per kid.
    Season Averages therefore group by trimmed, lowercased name. The consequence: renaming a kid in
@@ -294,14 +296,40 @@ display `createdAt`).
 
 ### The `provisional` flag
 
-A device booting with an empty cache calls `defaultState()`, which fabricates a placeholder
-profile containing a fresh "Season 1". That season's id matches nothing on the server, so merging
-it in permanently added an empty season to the shared account **for every new phone or browser
-that ever signed in** — they accumulated forever and synced to everyone.
+A device booting with an empty cache calls `defaultState()`. That used to fabricate a placeholder
+profile containing a fresh "Season 1", whose id matched nothing on the server — so merging it in
+permanently added an empty season to the shared account **for every new phone or browser that ever
+signed in**. They accumulated forever and synced to everyone.
 
 `defaultState()` now marks itself `provisional: true`, `mergeStates` discards a provisional local
 wholesale in favour of the server, and `save()` clears the flag the moment the state becomes
 real. A genuinely new empty season created by the user still syncs normally.
+
+`defaultState()` is also empty now — no profile, no season — so a fresh account opens on an
+empty-state prompt rather than a fictional kid playing a sport nobody chose. That change is about
+first-run UX, but it makes this flag less load-bearing as a side effect: there is no longer
+anything in a provisional state that *could* pollute an account if the flag were ever lost.
+
+The flag still earns its place, because an empty local state is otherwise ambiguous — "this device
+hasn't synced yet" and "the user deleted everything" look identical, and only the first should
+defer wholesale to the server. (Tombstones make the *deleted* case self-describing, since the
+removed profiles are still in the array; `provisional` is what identifies the other one.)
+
+### Empty is a legal state, at every level
+
+An account can have no profiles, and a profile can have no seasons. Both render an empty prompt
+rather than anything fabricated.
+
+This is worth stating because the alternative was tried and is worse. An earlier version kept the
+invariant "every profile has at least one season", which meant `sanitize()` had to *re-create* a
+season whenever a merge removed the last one — reachable whenever two devices each delete a
+different season and "deleted wins" leaves none. That rescue then needed a deterministic id
+(`seed-s-<profileId>`) so two devices arriving independently didn't mint two different seasons
+that merged into a duplicate pair. Allowing empty deletes the whole problem instead of guarding
+it: nothing is invented, so there is nothing to collide.
+
+The nav has to keep up: `sanitize()` moves a device sitting on a season that another device just
+deleted back to the profile screen, and off a deleted profile back home.
 
 ### Storage migrations
 
@@ -453,5 +481,8 @@ the stat schema, or the state endpoints** — that contract fails invisibly unti
 - **Profiles merge by name**, so renaming the same kid differently on two offline devices yields
   two profiles rather than a conflict. Deliberate: nothing is ever silently lost, and merging two
   visible profiles by hand is easy.
-- **Deleting a profile or season is not tombstoned** (unlike players and stats), so a delete can
-  be undone by a resync from a device that hasn't heard about it yet.
+- **Deleting a kid, then adding a new one with the same name, only converges if both devices see
+  the delete first.** Profiles coalesce by name, so `addProfile` treats a tombstone and a live
+  profile sharing a name as the same kid *only when their ids match*; otherwise the live one wins,
+  which is what lets a name be reused. A device that was offline for both the delete and the
+  re-add can therefore keep its own copy under that name until it syncs.

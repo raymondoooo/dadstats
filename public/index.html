@@ -314,6 +314,7 @@
   .avg-name { font-family: -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif; }
   .row-actions { display: flex; gap: 2px; }
   .list-empty { font-size: 0.74rem; color: var(--ink-muted); }
+  .home-empty { font-size: 0.85rem; color: var(--ink-muted); padding: 18px 2px 6px; }
 
   .status-chip {
     font-size: 0.6rem;
@@ -756,13 +757,33 @@
   <div class="screen" id="homeView">
     <h2 class="screen-title">Kids &amp; Teams</h2>
     <div class="profile-grid" id="profileGrid"></div>
+    <div class="home-empty" id="homeEmpty" hidden>
+      Nobody here yet. Add a kid or a team to start tracking.
+    </div>
     <button class="add-tile" id="addProfileBtn">+ Add Kid/Team</button>
+    <!-- Same shape as the season form below, and for the same reason: a new profile needs a name
+         *and* a first sport. Asking for the sport here is what keeps the app from presuming
+         basketball for a kid who swims. -->
+    <form class="season-form" id="profileForm" hidden>
+      <label for="profileNameInput">Kid or team name</label>
+      <input type="text" id="profileNameInput" placeholder='e.g. "Jordan" or "Rec League Warriors"' />
+      <label for="profileSportInput">First sport</label>
+      <select id="profileSportInput"></select>
+      <div class="season-form-hint">Creates their first season. You can add more seasons later, in any sport.</div>
+      <div class="season-form-actions">
+        <button type="submit">Add</button>
+        <button type="button" class="ghost" id="profileFormCancel">Cancel</button>
+      </div>
+    </form>
   </div>
 
   <div class="screen" id="profileView">
     <button class="back-btn" id="profileBackBtn">&larr; Kids &amp; Teams</button>
     <h2 class="screen-title" id="profileTitle"></h2>
     <div class="season-list" id="seasonList"></div>
+    <div class="home-empty" id="profileEmpty" hidden>
+      No seasons yet. Add one to pick a sport and start recording games.
+    </div>
     <button class="add-tile" id="addSeasonBtn">+ Add Season</button>
     <!-- Inline rather than a modal: a season needs a name *and* a sport, which prompt() can't
          collect in one step, and the app has no overlay machinery to justify adding for this. -->
@@ -1364,6 +1385,20 @@
     return ((g && g.players) || []).filter(function (p) { return !p.removed; });
   }
 
+  // Profiles and seasons tombstone for exactly the same reason players and log entries do, one
+  // level up: mergeStates unions two devices' profile lists (by name) and season lists (by id),
+  // so a spliced-out profile was resurrected by the next resync from any device that still had a
+  // copy. Delete the kid on the phone, and the tablet put them back.
+  //
+  // Everything user-facing goes through these two; the raw arrays keep the tombstones so the
+  // deletion itself can propagate.
+  function activeProfiles(st) {
+    return (((st || state) || {}).profiles || []).filter(function (pr) { return !pr.removed; });
+  }
+  function activeSeasons(pr) {
+    return ((pr && pr.seasons) || []).filter(function (s) { return !s.removed; });
+  }
+
   // Case-insensitive, whitespace-trimmed match, scoped to one game's roster — blank names don't
   // count as a conflict with each other (a coach may add a few players before naming them).
   // Compares against array indices (not filtered positions), so callers can pass a raw index.
@@ -1448,9 +1483,13 @@
   // season to the shared account for every new phone or browser that ever signed in. See
   // mergeStates, which discards a provisional local wholesale, and save(), which clears the flag
   // the moment this state becomes real.
+  // Deliberately empty. This used to fabricate a "Player 1" carrying a basketball "Season 1",
+  // which meant every brand-new account opened onto a fictional kid playing a sport nobody had
+  // chosen — wrong for the ten sports that aren't basketball, and busywork for the one that is.
+  // An empty state is also strictly safer to merge: `provisional` still short-circuits it below,
+  // but there is no longer anything here that *could* pollute an account if that flag were lost.
   function defaultState() {
-    var profile = freshProfile('Player 1');
-    return { profiles: [profile], nav: { screen: 'home', profileId: null }, provisional: true };
+    return { profiles: [], nav: { screen: 'home', profileId: null }, provisional: true };
   }
 
   // ---- migration chain: v1 (flat players) -> v2 (seasons) -> v3 (profiles) -> v4 (+stats/subs) -> v5 (staged games) ----
@@ -1503,10 +1542,13 @@
     return { profiles: profiles, nav: nav };
   }
 
+  // Searches live seasons only: a game inside a season the other device deleted is not reachable,
+  // and sanitize() relies on this returning null there to send the tracker back home.
   function findGameInProfile(pr, gameId) {
     if (!pr) return null;
-    for (var i = 0; i < pr.seasons.length; i++) {
-      var s = pr.seasons[i];
+    var seasons = activeSeasons(pr);
+    for (var i = 0; i < seasons.length; i++) {
+      var s = seasons[i];
       var g = s.games.filter(function (x) { return x.id === gameId; })[0];
       if (g) return { season: s, game: g };
     }
@@ -1528,7 +1570,15 @@
   // yet, can't compound across repeated merges.
   function sanitize(parsed, resetClocks) {
     parsed.profiles.forEach(function (pr) {
-      if (!pr.seasons || pr.seasons.length === 0) pr.seasons = [freshSeason('Season 1')];
+      pr.removed = pr.removed || false;
+      if (!pr.seasons) pr.seasons = [];
+      pr.seasons.forEach(function (s) { s.removed = s.removed || false; });
+      // A profile with no live seasons is a legal state: you can delete them all, and a merge can
+      // reach it too when two devices each delete a different one. Nothing is fabricated to fill
+      // the gap — the profile screen shows an empty prompt instead. (An earlier version rescued a
+      // season here, which then had to mint a *deterministic* id so two devices' independent
+      // rescues didn't merge into a duplicate pair. Allowing empty deletes that problem rather
+      // than working around it.)
       pr.seasons.forEach(function (s) {
         if (!s.games) s.games = [];
         // Every season that predates multi-sport was basketball. Backfilling here rather than in
@@ -1562,12 +1612,31 @@
           }
         });
       });
-      if (!pr.seasons.some(function (s) { return s.id === pr.activeSeasonId; })) pr.activeSeasonId = pr.seasons[0].id;
+      // Must point at a *live* season: a merge can tombstone whichever one this device was on.
+      // Left alone when there are none, because a seasonless profile is now legal.
+      var live = activeSeasons(pr);
+      if (live.length && !live.some(function (s) { return s.id === pr.activeSeasonId; })) {
+        pr.activeSeasonId = live[0].id;
+      }
     });
     if (!parsed.nav || SCREENS.indexOf(parsed.nav.screen) === -1) {
       parsed.nav = { screen: 'home', profileId: null };
     }
-    if (parsed.nav.profileId && !parsed.profiles.some(function (pr) { return pr.id === parsed.nav.profileId; })) {
+    // Deliberately checks the live profiles, not the raw array: standing on a kid the other device
+    // just deleted has to send this one home, not leave it looking at a tombstone.
+    if (parsed.nav.profileId && !activeProfiles(parsed).some(function (pr) { return pr.id === parsed.nav.profileId; })) {
+      parsed.nav = { screen: 'home', profileId: null };
+    }
+    // The season screen renders whatever activeSeasonOf() returns, so standing on a season that
+    // another device just deleted — or on a profile whose last season is gone — has to fall back
+    // to the profile screen rather than render undefined.
+    if (parsed.nav.screen === 'season') {
+      var prS = parsed.profiles.filter(function (p) { return p.id === parsed.nav.profileId; })[0];
+      if (!prS || activeSeasons(prS).length === 0) {
+        parsed.nav = { screen: 'profile', profileId: parsed.nav.profileId };
+      }
+    }
+    if (parsed.nav.screen === 'profile' && !parsed.nav.profileId) {
       parsed.nav = { screen: 'home', profileId: null };
     }
     if (parsed.nav.screen === 'tracker') {
@@ -1883,8 +1952,21 @@
     var byNameLower = {};
     function addProfile(pr) {
       var key = (pr.name || '').trim().toLowerCase();
-      if (byNameLower[key]) {
-        var existing = byNameLower[key];
+      var existing = byNameLower[key];
+
+      // Profiles coalesce by name so two devices that each add the same kid before syncing end up
+      // with one of them. But a tombstone and a live profile that merely *share* a name are not
+      // the same profile — that's the user deleting "Jordan" and later adding a new "Jordan".
+      // Coalescing those by name would let the old tombstone kill the new profile on the next
+      // merge, so a pair that disagrees about deletion only coalesces when the ids match too.
+      var sameProfile = existing && existing.id === pr.id;
+      var acrossDelete = existing && !sameProfile && (!!existing.removed !== !!pr.removed);
+
+      if (existing && !acrossDelete) {
+        // Deleted wins, the same way it does for players and log entries (see mergePlayer): the
+        // other device simply hasn't been told yet, and resurrecting is the worse failure — the
+        // user did an explicit, confirmed delete and watched it come back.
+        existing.removed = !!(existing.removed || pr.removed);
         var seasonIds = {};
         existing.seasons.forEach(function (s) { seasonIds[s.id] = true; });
         pr.seasons.forEach(function (s) {
@@ -1892,14 +1974,19 @@
             existing.seasons.push(s);
             seasonIds[s.id] = true;
           } else {
-            mergeGamesInto(existing.seasons.filter(function (es) { return es.id === s.id; })[0], s);
+            var target = existing.seasons.filter(function (es) { return es.id === s.id; })[0];
+            target.removed = !!(target.removed || s.removed);
+            mergeGamesInto(target, s);
           }
         });
-      } else {
-        var copy = JSON.parse(JSON.stringify(pr));
-        byNameLower[key] = copy;
-        merged.profiles.push(copy);
+        return;
       }
+
+      var copy = JSON.parse(JSON.stringify(pr));
+      merged.profiles.push(copy);
+      // The live profile owns the name; a tombstone rides along so its deletion keeps
+      // propagating, but never displaces a live profile from the lookup.
+      if (!existing || !copy.removed) byNameLower[key] = copy;
     }
     (local.profiles || []).forEach(addProfile);
     (server.profiles || []).forEach(addProfile);
@@ -2093,7 +2180,8 @@
     return getProfile(state.nav.profileId);
   }
   function activeSeasonOf(profile) {
-    return profile.seasons.filter(function (s) { return s.id === profile.activeSeasonId; })[0] || profile.seasons[0];
+    var live = activeSeasons(profile);
+    return live.filter(function (s) { return s.id === profile.activeSeasonId; })[0] || live[0];
   }
   function activeGame() {
     var found = findGameInProfile(activeProfile(), state.nav.gameId);
@@ -2177,7 +2265,7 @@
   }
   function profileRecord(pr) {
     var w = 0, l = 0;
-    pr.seasons.forEach(function (s) {
+    activeSeasons(pr).forEach(function (s) {
       var r = seasonRecord(s);
       w += r.w; l += r.l;
     });
@@ -2256,15 +2344,21 @@
   // ---------- Home screen ----------
   function renderHome() {
     var grid = document.getElementById('profileGrid');
-    grid.innerHTML = state.profiles.map(function (pr) {
+    // Looked up rather than closed over: renderHome can run before the form's vars are assigned.
+    // Hidden while the form is open so the prompt isn't sitting above the thing it asks for.
+    var formOpen = !document.getElementById('profileForm').hidden;
+    var profiles = activeProfiles(state);
+    document.getElementById('homeEmpty').hidden = profiles.length > 0 || formOpen;
+    grid.innerHTML = profiles.map(function (pr) {
       var rec = profileRecord(pr);
+      var seasonCount = activeSeasons(pr).length;
       return '<div class="profile-tile" role="button" tabindex="0" data-openprofile="' + pr.id + '">' +
         '<div class="tile-actions">' +
           '<button class="icon-btn" data-renameprofile="' + pr.id + '" title="Rename" aria-label="Rename ' + escapeHtml(pr.name) + '">&#9998;</button>' +
-          (state.profiles.length > 1 ? '<button class="icon-btn danger" data-delprofile="' + pr.id + '" title="Delete" aria-label="Delete ' + escapeHtml(pr.name) + '">&times;</button>' : '') +
+          '<button class="icon-btn danger" data-delprofile="' + pr.id + '" title="Delete" aria-label="Delete ' + escapeHtml(pr.name) + '">&times;</button>' +
         '</div>' +
         '<div class="name">' + escapeHtml(pr.name) + '</div>' +
-        '<div class="meta">' + pr.seasons.length + ' season' + (pr.seasons.length === 1 ? '' : 's') + '</div>' +
+        '<div class="meta">' + seasonCount + ' season' + (seasonCount === 1 ? '' : 's') + '</div>' +
         (rec.w + rec.l > 0 ? recordHtml(rec) : '') +
       '</div>';
     }).join('');
@@ -2295,23 +2389,54 @@
     }
   }
   function deleteProfile(id) {
-    if (state.profiles.length <= 1) return;
+    // No "can't delete the last one" guard any more: an account with no profiles is a legal state
+    // now (it's what a fresh one looks like), so there's nothing left for that guard to protect.
     var pr = getProfile(id);
     if (!confirm('Delete "' + pr.name + '"? This permanently deletes all their seasons and saved games.')) return;
-    state.profiles = state.profiles.filter(function (p) { return p.id !== id; });
+    pr.removed = true; // tombstone, never splice — see activeProfiles
     if (state.nav.profileId === id) state.nav = { screen: 'home', profileId: null };
     save();
     render();
   }
 
-  document.getElementById('addProfileBtn').addEventListener('click', function () {
-    var name = prompt('Name this kid or team (e.g. "Jordan" or "Rec League Warriors"):');
-    if (name && name.trim()) {
-      var profile = freshProfile(name.trim());
-      state.profiles.push(profile);
-      save();
-      openProfile(profile.id);
-    }
+  var addProfileBtn = document.getElementById('addProfileBtn');
+  var profileForm = document.getElementById('profileForm');
+  var profileNameInput = document.getElementById('profileNameInput');
+  var profileSportInput = document.getElementById('profileSportInput');
+
+  function closeProfileForm() {
+    profileForm.hidden = true;
+    addProfileBtn.hidden = false;
+    profileNameInput.value = '';
+  }
+
+  addProfileBtn.addEventListener('click', function () {
+    profileForm.hidden = false;
+    addProfileBtn.hidden = true;
+    renderHome(); // re-evaluates the empty prompt, which hides while the form is open
+    // Whatever the most recently added kid plays — siblings usually turn up in the same gym, and
+    // the very first profile on a fresh account falls through to DEFAULT_SPORT.
+    var live = activeProfiles(state);
+    var last = live[live.length - 1];
+    var lastSeasons = last ? activeSeasons(last) : [];
+    profileSportInput.value = sportOfSeason(lastSeasons[lastSeasons.length - 1]);
+    profileNameInput.focus();
+  });
+
+  document.getElementById('profileFormCancel').addEventListener('click', function () {
+    closeProfileForm();
+    renderHome(); // the empty prompt comes back if there's still nobody here
+  });
+
+  profileForm.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var name = profileNameInput.value.trim();
+    if (!name) { profileNameInput.focus(); return; }
+    var profile = freshProfile(name, profileSportInput.value);
+    state.profiles.push(profile);
+    closeProfileForm();
+    save();
+    openProfile(profile.id);
   });
   document.getElementById('profileBackBtn').addEventListener('click', function () {
     state.nav = { screen: 'home', profileId: null };
@@ -2324,7 +2449,10 @@
     var pr = activeProfile();
     document.getElementById('profileTitle').textContent = pr.name;
     var list = document.getElementById('seasonList');
-    list.innerHTML = pr.seasons.map(function (s) {
+    var seasons = activeSeasons(pr);
+    var seasonFormOpen = !document.getElementById('seasonForm').hidden;
+    document.getElementById('profileEmpty').hidden = seasons.length > 0 || seasonFormOpen;
+    list.innerHTML = seasons.map(function (s) {
       var gcount = s.games.length;
       return '<div class="list-row" role="button" tabindex="0" data-openseason="' + s.id + '">' +
         '<span class="row-name">' + escapeHtml(s.name) + '</span>' +
@@ -2337,7 +2465,7 @@
         '<span class="row-meta">' + gcount + ' game' + (gcount === 1 ? '' : 's') + '</span>' +
         '<div class="row-actions">' +
           '<button class="icon-btn" data-renameseason="' + s.id + '" title="Rename" aria-label="Rename ' + escapeHtml(s.name) + '">&#9998;</button>' +
-          (pr.seasons.length > 1 ? '<button class="icon-btn danger" data-delseason="' + s.id + '" title="Delete" aria-label="Delete ' + escapeHtml(s.name) + '">&times;</button>' : '') +
+          '<button class="icon-btn danger" data-delseason="' + s.id + '" title="Delete" aria-label="Delete ' + escapeHtml(s.name) + '">&times;</button>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -2372,11 +2500,15 @@
   }
   function deleteSeason(seasonId) {
     var pr = activeProfile();
-    if (pr.seasons.length <= 1) return;
     var s = pr.seasons.filter(function (x) { return x.id === seasonId; })[0];
     if (!confirm('Delete "' + s.name + '"? This permanently deletes its saved games.')) return;
-    pr.seasons = pr.seasons.filter(function (x) { return x.id !== seasonId; });
-    if (pr.activeSeasonId === seasonId) pr.activeSeasonId = pr.seasons[0].id;
+    s.removed = true; // tombstone, never splice — see activeSeasons
+    if (pr.activeSeasonId === seasonId) {
+      // May be none left; a seasonless profile is legal, and render falls back to its empty state.
+      var remaining = activeSeasons(pr);
+      pr.activeSeasonId = remaining.length ? remaining[0].id : null;
+      if (!remaining.length) state.nav = { screen: 'profile', profileId: pr.id };
+    }
     save();
     render();
   }
@@ -2387,10 +2519,12 @@
   var addSeasonBtn = document.getElementById('addSeasonBtn');
 
   SPORT_KEYS.forEach(function (key) {
-    var opt = document.createElement('option');
-    opt.value = key;
-    opt.textContent = SPORTS[key].icon + '  ' + SPORTS[key].label;
-    seasonSportInput.appendChild(opt);
+    [seasonSportInput, profileSportInput].forEach(function (select) {
+      var opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = SPORTS[key].icon + '  ' + SPORTS[key].label;
+      select.appendChild(opt);
+    });
   });
 
   function closeSeasonForm() {
@@ -2402,15 +2536,19 @@
   addSeasonBtn.addEventListener('click', function () {
     seasonForm.hidden = false;
     addSeasonBtn.hidden = true;
+    renderProfileScreen(); // re-evaluates the empty prompt, which hides while the form is open
     // Defaults to the sport of the profile's most recent season — a kid who plays one sport
-    // shouldn't have to re-pick it every year.
+    // shouldn't have to re-pick it every year. Falls through to DEFAULT_SPORT when they have none.
     var pr = activeProfile();
-    var last = pr.seasons[pr.seasons.length - 1];
-    seasonSportInput.value = sportOfSeason(last);
+    var live = activeSeasons(pr);
+    seasonSportInput.value = sportOfSeason(live[live.length - 1]);
     seasonNameInput.focus();
   });
 
-  document.getElementById('seasonFormCancel').addEventListener('click', closeSeasonForm);
+  document.getElementById('seasonFormCancel').addEventListener('click', function () {
+    closeSeasonForm();
+    renderProfileScreen(); // the empty prompt comes back if there are still no seasons
+  });
 
   seasonForm.addEventListener('submit', function (ev) {
     ev.preventDefault();
