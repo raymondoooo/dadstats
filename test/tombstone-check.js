@@ -171,6 +171,44 @@ async function home(page) {
     resynced.length === after.length
       ? ok('the season deletion survived a merge with a device that still had it')
       : bad(`season came back: ${JSON.stringify(resynced)}`);
+
+    // --- Every season can go: a seasonless profile is a legal state, not one to be rescued ---
+    for (let guard = 0; guard < 6; guard++) {
+      const btn = await A.$('[data-delseason]');
+      if (!btn) break;
+      await btn.click();
+      await A.waitForTimeout(1500);
+    }
+    const emptied = await seasonNames(A);
+    emptied.length === 0
+      ? ok('the last season can be deleted')
+      : bad(`seasons remain after deleting all: ${JSON.stringify(emptied)}`);
+
+    (await A.isVisible('#profileEmpty'))
+      ? ok('the profile shows its empty prompt')
+      : bad('no empty prompt on a seasonless profile');
+
+    // The old code re-created one here, and two devices doing that independently produced a
+    // duplicate pair. Nothing should be fabricated now — on either device.
+    await A.reload({ waitUntil: 'networkidle' });
+    await A.waitForTimeout(3000);
+    await home(A);
+    await openByName(A, subject);
+    await A.waitForSelector('#addSeasonBtn', { timeout: 10000 });
+    const afterReload = await seasonNames(A);
+    afterReload.length === 0
+      ? ok('no season is fabricated on reload')
+      : bad(`a season reappeared on reload: ${JSON.stringify(afterReload)}`);
+
+    await B.reload({ waitUntil: 'networkidle' });
+    await B.waitForTimeout(3000);
+    await home(B);
+    await openByName(B, subject);
+    await B.waitForSelector('#addSeasonBtn', { timeout: 10000 });
+    const onB = await seasonNames(B);
+    onB.length === 0
+      ? ok('the other device agrees the profile has no seasons')
+      : bad(`B shows seasons the profile no longer has: ${JSON.stringify(onB)}`);
   }
 
   await browser.close();

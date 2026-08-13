@@ -125,8 +125,8 @@ Kids & Teams  →  Seasons  →  Games  →  Tracker
 - **Games** — that season's games sorted soonest-first, plus a Season Averages table.
 - **Tracker** — one game: scoreboard, clock, and a card per player.
 
-Every level supports rename and delete, and you can never delete the last profile or the last
-season (the delete control disappears rather than erroring).
+Every level supports rename and delete, including deleting the last one — an account with no kids,
+or a kid with no seasons, shows an empty prompt rather than being prevented.
 
 ## Game lifecycle
 
@@ -315,18 +315,21 @@ hasn't synced yet" and "the user deleted everything" look identical, and only th
 defer wholesale to the server. (Tombstones make the *deleted* case self-describing, since the
 removed profiles are still in the array; `provisional` is what identifies the other one.)
 
-### Rescuing a profile with no live seasons
+### Empty is a legal state, at every level
 
-Every profile keeps at least one live season, so the season screen always has something to show.
-The UI won't let you delete the last one — but a merge can still get there, because two devices
-can each delete a *different* season and "deleted wins" leaves nothing behind.
+An account can have no profiles, and a profile can have no seasons. Both render an empty prompt
+rather than anything fabricated.
 
-`sanitize()` re-creates one when that happens, with an id derived from the profile
-(`seed-s-<profileId>`) rather than a random one. That matters for the same reason the seeded
-player id does: two devices reaching this independently must land on the *same* season, or the
-next merge unions their two rescues into a pair of identical empty seasons. The unfixed code took
-the random path and produced exactly that — a duplicate "Season 1" — which is visible in
-`tombstone-check.js` when run against a build without the fix.
+This is worth stating because the alternative was tried and is worse. An earlier version kept the
+invariant "every profile has at least one season", which meant `sanitize()` had to *re-create* a
+season whenever a merge removed the last one — reachable whenever two devices each delete a
+different season and "deleted wins" leaves none. That rescue then needed a deterministic id
+(`seed-s-<profileId>`) so two devices arriving independently didn't mint two different seasons
+that merged into a duplicate pair. Allowing empty deletes the whole problem instead of guarding
+it: nothing is invented, so there is nothing to collide.
+
+The nav has to keep up: `sanitize()` moves a device sitting on a season that another device just
+deleted back to the profile screen, and off a deleted profile back home.
 
 ### Storage migrations
 
