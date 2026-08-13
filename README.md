@@ -83,10 +83,10 @@ your real data means you can't easily go back.
 
 Versions before `0.2.2` are not available — they had a bug that broke bind-mounted volumes.
 
-**`0.3.0` changes the port inside the container from 3108 to 3211**, so the host and container
+**`0.4.0` changes the port inside the container from 3108 to 3211**, so the host and container
 sides match in the docs and a `docker ps` line reads the same on both halves. If you're upgrading
-from `0.2.x` and want to keep your existing mapping, either update it to `-p 3211:3211` or pin
-the old port back:
+from `0.3.x` or earlier and want to keep your existing mapping, either update it to `-p 3211:3211`
+or pin the old port back:
 
 ```bash
 docker run -d -p 3108:3108 -e PORT=3108 -v dadstats-data:/app/data raymondoooo/dadstats
