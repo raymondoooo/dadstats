@@ -1,7 +1,7 @@
 // Shared test setup. Families are created by the admin now, so a test can't just invent a
 // password and log in — it has to provision an account first, exactly like a real operator would.
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-const APP_URL = process.env.APP_URL || 'http://localhost:3108';
+const APP_URL = process.env.APP_URL || 'http://localhost:3211';
 
 async function api(cookie, method, path, body) {
   const res = await fetch(APP_URL + path, {
@@ -43,7 +43,7 @@ async function provisionFamily(label) {
     throw new Error(
       'ADMIN_PASSWORD is required.\n' +
       'Start the test instance with a known admin password, e.g.\n' +
-      '  docker run -d --name dadstats-test -p 3208:3108 -e ADMIN_PASSWORD=test-admin-pw \\\n' +
+      '  docker run -d --name dadstats-test -p 3208:3211 -e ADMIN_PASSWORD=test-admin-pw \\\n' +
       '    -v dadstats-test-data:/app/data dadstats\n' +
       'then run tests with ADMIN_PASSWORD=test-admin-pw'
     );

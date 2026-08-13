@@ -34,7 +34,7 @@ jobs:
 
       - name: Start container
         run: |
-          docker run -d --name dadstats-ci -p 3208:3108 \
+          docker run -d --name dadstats-ci -p 3208:3211 \
             -e ADMIN_PASSWORD=ci-admin-password \
             -v dadstats-ci-data:/app/data \
             dadstats:ci
@@ -74,7 +74,7 @@ jobs:
       # untouched container rather than the one the tests above have been creating families in.
       - name: Start a virgin instance for the setup check
         run: |
-          docker run -d --name dadstats-virgin -p 3209:3108 \
+          docker run -d --name dadstats-virgin -p 3209:3211 \
             -v dadstats-virgin-data:/app/data dadstats:ci
           for i in $(seq 1 30); do
             if curl -sf http://localhost:3209/api/health >/dev/null; then echo "up"; exit 0; fi
