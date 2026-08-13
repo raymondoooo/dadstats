@@ -69,6 +69,7 @@ jobs:
           node test/ui-check.js
           node test/sync-check.js
           node test/sport-check.js
+          node test/tombstone-check.js
 
       # First-run setup only exists on an instance with no families, so it needs its own
       # untouched container rather than the one the tests above have been creating families in.

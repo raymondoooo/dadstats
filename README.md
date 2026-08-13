@@ -208,9 +208,11 @@ Three rules matter more than the rest:
 1. **Stat counters are derived, never authoritative.** Every tap appends a uniquely-id'd entry to
    `log[]`, and the counters are recomputed from it (`recomputeFromLog`). Undo tombstones the
    entry (`removed: true`) instead of popping it.
-2. **Deletes are tombstones, not splices.** Removed players and undone log entries stay in the
-   array flagged `removed`. A merge can't tell "never existed here" from "was deleted here", so
-   anything spliced out would simply be resurrected by the next sync from another device.
+2. **Deletes are tombstones, not splices.** Removed players, undone log entries, deleted seasons
+   and deleted profiles all stay in their array flagged `removed`. A merge can't tell "never
+   existed here" from "was deleted here", so anything spliced out is simply resurrected by the next
+   sync from another device. Everything user-facing reads through `activePlayers`,
+   `activeLogEntries`, `activeSeasons` and `activeProfiles`, which filter the tombstones out.
 3. **A player's identity across games is their name.** There is no season-level roster object —
    every game holds its own independent cards, and `player.id` is unique per card, not per kid.
    Season Averages therefore group by trimmed, lowercased name. The consequence: renaming a kid in
@@ -310,15 +312,21 @@ anything in a provisional state that *could* pollute an account if the flag were
 
 The flag still earns its place, because an empty local state is otherwise ambiguous — "this device
 hasn't synced yet" and "the user deleted everything" look identical, and only the first should
-defer wholesale to the server.
+defer wholesale to the server. (Tombstones make the *deleted* case self-describing, since the
+removed profiles are still in the array; `provisional` is what identifies the other one.)
 
-> **Known gap:** tombstones cover players within a game and entries within a log, but *not*
-> profiles and seasons — `deleteProfile`/`deleteSeason` splice. On one device that's fine, since
-> the deletion is saved and the server takes it. With two devices, the other device's copy is
-> unioned back in on the next merge and the profile returns. This predates the empty default (it
-> applied to any profile deletion), but an empty account is now reachable, which makes it the most
-> visible form of the problem. Fixing it means giving profiles and seasons the same `removed` flag
-> games already use.
+### Rescuing a profile with no live seasons
+
+Every profile keeps at least one live season, so the season screen always has something to show.
+The UI won't let you delete the last one — but a merge can still get there, because two devices
+can each delete a *different* season and "deleted wins" leaves nothing behind.
+
+`sanitize()` re-creates one when that happens, with an id derived from the profile
+(`seed-s-<profileId>`) rather than a random one. That matters for the same reason the seeded
+player id does: two devices reaching this independently must land on the *same* season, or the
+next merge unions their two rescues into a pair of identical empty seasons. The unfixed code took
+the random path and produced exactly that — a duplicate "Season 1" — which is visible in
+`tombstone-check.js` when run against a build without the fix.
 
 ### Storage migrations
 
@@ -470,5 +478,8 @@ the stat schema, or the state endpoints** — that contract fails invisibly unti
 - **Profiles merge by name**, so renaming the same kid differently on two offline devices yields
   two profiles rather than a conflict. Deliberate: nothing is ever silently lost, and merging two
   visible profiles by hand is easy.
-- **Deleting a profile or season is not tombstoned** (unlike players and stats), so a delete can
-  be undone by a resync from a device that hasn't heard about it yet.
+- **Deleting a kid, then adding a new one with the same name, only converges if both devices see
+  the delete first.** Profiles coalesce by name, so `addProfile` treats a tombstone and a live
+  profile sharing a name as the same kid *only when their ids match*; otherwise the live one wins,
+  which is what lets a name be reused. A device that was offline for both the delete and the
+  re-add can therefore keep its own copy under that name until it syncs.
