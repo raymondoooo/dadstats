@@ -224,35 +224,25 @@
   }
   .add-tile:hover { border-color: var(--accent); color: var(--accent); }
 
-  .schedule-btn {
-    width: 100%;
-    border: 1px solid var(--accent);
-    background: var(--accent);
-    color: var(--accent-ink);
-    font-size: 0.84rem;
-    font-weight: 800;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    padding: 14px;
-    border-radius: 12px;
-    cursor: pointer;
+  /* Title and its actions share a row, wrapping to two on a narrow phone rather than shrinking
+     the buttons below a comfortable tap target. */
+  .season-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 10px; flex-wrap: wrap;
   }
-  .schedule-btn:active { transform: scale(0.98); }
-
-  .ics-connected {
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 12px; padding: 10px 12px; margin-top: 4px;
-  }
-  .ics-url {
-    flex: 1 1 160px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    font-size: 0.78rem; color: var(--ink-muted);
-  }
-  .ics-status { flex-basis: 100%; font-size: 0.72rem; color: var(--ink-muted); }
-  .ics-connected button {
-    font: inherit; font-weight: 700; font-size: 0.76rem; cursor: pointer;
-    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
+  .season-head .screen-title { margin: 0; flex: 1 1 auto; }
+  .season-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+  .mini-btn {
+    font: inherit; font-weight: 700; font-size: 0.74rem; cursor: pointer;
+    letter-spacing: 0.02em; white-space: nowrap;
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 11px;
     background: transparent; color: var(--ink-muted);
+  }
+  .mini-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .mini-btn:active { transform: scale(0.97); }
+  .ics-status {
+    font-size: 0.72rem; color: var(--ink-muted);
+    margin-top: 6px; min-height: 1em;
   }
 
   .profile-grid {
@@ -818,12 +808,20 @@
 
   <div class="screen" id="seasonView">
     <button class="back-btn" id="seasonBackBtn">&larr; <span id="seasonBackLabel"></span></button>
-    <h2 class="screen-title" id="seasonTitle"></h2>
-    <button class="schedule-btn" id="scheduleGameBtn">+ Schedule Game</button>
+    <!-- Actions live on the title row rather than as full-width blocks above the list: the games
+         are what you came to look at, and scheduling is something you do once a season. -->
+    <div class="season-head">
+      <h2 class="screen-title" id="seasonTitle"></h2>
+      <div class="season-actions">
+        <button class="mini-btn" id="scheduleGameBtn">+ Game</button>
+        <button class="mini-btn" id="icsSyncBtn" hidden>Sync</button>
+        <button class="mini-btn" id="icsAddBtn">Feed</button>
+      </div>
+    </div>
+    <div class="ics-status" id="icsStatus"></div>
 
     <!-- Inline for the same reason the season/profile forms are: a modal isn't worth building
-         for one field. Only one of icsForm/icsConnected/icsAddBtn is visible at a time. -->
-    <button class="add-tile" id="icsAddBtn">+ Import from calendar feed</button>
+         for one field. Opens prefilled once a feed is set, so it doubles as "change the URL". -->
     <form class="season-form" id="icsForm" hidden>
       <label for="icsUrlInput">Calendar feed URL</label>
       <input type="url" id="icsUrlInput" placeholder="https://... (TeamSnap, league site, etc.)" />
@@ -837,12 +835,6 @@
         <button type="button" class="ghost" id="icsFormCancel">Cancel</button>
       </div>
     </form>
-    <div class="ics-connected" id="icsConnected" hidden>
-      <span class="ics-url" id="icsUrlDisplay"></span>
-      <button type="button" id="icsSyncBtn">Sync now</button>
-      <button type="button" id="icsEditBtn">Change</button>
-      <span class="ics-status" id="icsStatus"></span>
-    </div>
 
     <div id="seasonAverages"></div>
     <div class="game-list" id="gameList"></div>
@@ -2815,7 +2807,7 @@
         if (added) parts.push(added + ' added');
         if (updated) parts.push(updated + ' updated');
         if (skipped) parts.push(skipped + ' skipped (deleted since last sync)');
-        statusEl.textContent = 'Synced ' + formatDate(season.icsLastSyncedAt) +
+        statusEl.textContent = 'Schedule synced ' + formatDate(season.icsLastSyncedAt) +
           (parts.length ? ' — ' + parts.join(', ') : ' — no changes');
       })
       .catch(function (err) {
@@ -2875,21 +2867,26 @@
   }
 
   var icsAddBtn = document.getElementById('icsAddBtn');
+  var icsSyncBtn = document.getElementById('icsSyncBtn');
   var icsForm = document.getElementById('icsForm');
   var icsUrlInput = document.getElementById('icsUrlInput');
-  var icsConnected = document.getElementById('icsConnected');
 
-  // Exactly one of the three is visible: the add button (nothing set up), the form (setting up
-  // or editing), or the connected strip (set up, form closed).
+  // The header actions are the whole UI for this now — the feed's URL isn't worth permanent
+  // screen space above the games, so it lives in the form (which opens prefilled and therefore
+  // doubles as "change the URL"). The status line under the title carries the only thing you'd
+  // actually want at a glance: whether it has synced, and what the last sync did.
   function renderIcsPanel(season) {
     var formOpen = !icsForm.hidden;
-    icsAddBtn.hidden = formOpen || !!season.icsUrl;
-    icsConnected.hidden = formOpen || !season.icsUrl;
-    if (!formOpen && season.icsUrl) {
-      document.getElementById('icsUrlDisplay').textContent = season.icsUrl;
-      document.getElementById('icsStatus').textContent = season.icsLastSyncedAt
-        ? 'Last synced ' + formatDate(season.icsLastSyncedAt)
-        : 'Not synced yet';
+    icsAddBtn.hidden = formOpen;
+    icsAddBtn.textContent = season.icsUrl ? 'Feed' : 'Import';
+    icsSyncBtn.hidden = formOpen || !season.icsUrl;
+    // This is the resting value. syncIcsFeed writes its own richer line ("… — 3 added") *after*
+    // the re-render it triggers, so the detail survives the sync itself and this takes over again
+    // next time the screen is rebuilt.
+    if (!formOpen) {
+      document.getElementById('icsStatus').textContent = !season.icsUrl ? ''
+        : season.icsLastSyncedAt ? 'Schedule synced ' + formatDate(season.icsLastSyncedAt)
+        : 'Feed set — not synced yet';
     }
   }
 
@@ -2905,8 +2902,8 @@
     renderIcsPanel(activeSeasonOf(activeProfile()));
   }
 
-  icsAddBtn.addEventListener('click', function () { openIcsForm(''); });
-  document.getElementById('icsEditBtn').addEventListener('click', function () {
+  // Opens prefilled when a feed is already set, so one button covers both "add" and "change".
+  icsAddBtn.addEventListener('click', function () {
     openIcsForm(activeSeasonOf(activeProfile()).icsUrl);
   });
   document.getElementById('icsFormCancel').addEventListener('click', closeIcsForm);
