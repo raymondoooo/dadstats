@@ -318,6 +318,18 @@ same ids instead of minting different random ones and duplicating everything on 
 
 ---
 
+## Your browser's copy
+
+The client keeps a full copy of your account in the browser so it works with no signal and never
+blocks a tap on the network. That cache is tied to the account it came from — an instance
+identifier plus your family — and dropped if it doesn't match.
+
+That matters because browser storage is keyed by address, not by installation. Rebuild an
+instance at the same address, or sign a different family in on the same browser, and without that
+check the old account's games would be adopted and uploaded into the new one.
+
+---
+
 ## Auth
 
 Two roles, deliberately small:

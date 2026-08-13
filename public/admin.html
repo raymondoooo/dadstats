@@ -102,6 +102,7 @@
     </div>
 
     <button class="ghost small" id="logoutBtn">Sign out of admin</button>
+    <div class="hint" id="adminVersion" style="margin-top:12px"></div>
   </div>
 </div>
 
@@ -259,6 +260,13 @@
 
   document.getElementById('logoutBtn').addEventListener('click', function () {
     api('POST', '/api/admin/logout').then(showLogin);
+  });
+
+  // Which build is running — the same question the app footer answers.
+  api('GET', '/api/health').then(function (r) {
+    if (r.ok && r.body && r.body.version) {
+      document.getElementById('adminVersion').textContent = 'DadStats v' + r.body.version;
+    }
   });
 
   // Resume an existing admin session if the cookie is still good.

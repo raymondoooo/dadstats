@@ -98,6 +98,15 @@ jobs:
           BIND_DIR: /tmp/dadstats-bindcheck
         run: ./test/image-check.sh
 
+      # Manages its own pair of containers on one port, so it can't share with the suites above.
+      - name: Account binding (cache must not cross accounts)
+        env:
+          IMAGE: dadstats:ci
+          CPORT: '3211'
+          PORT: '3280'
+          NODE_PATH: /tmp/pw/node_modules
+        run: ./test/run-account-check.sh
+
       # Runs last on purpose: it deliberately trips the login rate limiter, which would then
       # block the family logins every other suite needs.
       - name: Security regressions
@@ -175,6 +184,9 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          # Tag minus the leading v, so the footer reads "v0.3.0" not "vv0.3.0".
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

@@ -2,7 +2,7 @@ require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
-const { db, initSchema, loadOrCreateJwtSecret, loadOrCreateAdminPassword } = require('./db');
+const { db, initSchema, loadOrCreateJwtSecret, loadOrCreateAdminPassword, loadOrCreateInstanceId } = require('./db');
 const {
   login, logout, requireAuth,
   adminLogin, adminLogout, requireAdmin,
@@ -18,6 +18,12 @@ const { loginLimiter } = require('./ratelimit');
 process.env.JWT_SECRET = loadOrCreateJwtSecret();
 const admin = loadOrCreateAdminPassword();
 process.env.ADMIN_PASSWORD = admin.value;
+const INSTANCE_ID = loadOrCreateInstanceId();
+
+// Surfaced in the app footer so "which build is this?" is answerable without shelling into the
+// container — the question that prompted adding it. CI stamps the tag at build time; a local
+// build falls back to package.json and is labelled dev.
+const APP_VERSION = process.env.APP_VERSION || require('../package.json').version || 'dev';
 
 const app = express();
 
@@ -39,7 +45,8 @@ app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, '..', 'public'
 app.get('/api/health', (req, res) => {
   try {
     db.prepare('select 1').get();
-    res.json({ ok: true, db: 'up' });
+    // Version is here rather than behind auth so the login and setup screens can show it too.
+    res.json({ ok: true, db: 'up', version: APP_VERSION });
   } catch (err) {
     res.status(503).json({ ok: false, db: 'down', error: err.message });
   }
@@ -127,6 +134,11 @@ app.get('/api/state', requireAuth, (req, res) => {
     state: row ? JSON.parse(row.state) : null,
     version: row ? row.version : 0,
     serverNow: Date.now(),
+    // Which account this data belongs to. The client caches state in localStorage, which is
+    // keyed by origin and outlives the container behind it — so a rebuilt instance, or a
+    // different family signing in on the same address, would otherwise inherit and then upload
+    // the previous account's data. The client compares this and drops a cache that isn't ours.
+    account: INSTANCE_ID + ':' + req.familyId,
   });
 });
 
