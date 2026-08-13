@@ -67,4 +67,21 @@ async function provisionFamily(label) {
   return password;
 }
 
-module.exports = { provisionFamily, pruneTestFamilies, APP_URL };
+// Adding a kid is an inline form (name + first sport), not a prompt() — the app stopped assuming
+// basketball for every new profile. Centralised because six suites open with this exact step, and
+// they'd otherwise all have to be edited again the next time the flow moves.
+//
+// Omit `sport` to take the form's own default, which is what the suites that predate the sport
+// picker did implicitly.
+async function addProfile(page, name, sport) {
+  await page.waitForSelector('#addProfileBtn', { state: 'visible', timeout: 15000 });
+  await page.click('#addProfileBtn');
+  await page.waitForSelector('#profileForm', { state: 'visible', timeout: 10000 });
+  await page.fill('#profileNameInput', name);
+  if (sport) await page.selectOption('#profileSportInput', sport);
+  await page.click('#profileForm button[type=submit]');
+  // Creating a profile navigates straight into it, so its seasons list is the signal it landed.
+  await page.waitForSelector('[data-openseason]', { timeout: 10000 });
+}
+
+module.exports = { provisionFamily, pruneTestFamilies, addProfile, APP_URL };

@@ -88,6 +88,26 @@ jobs:
           NODE_PATH: /tmp/pw/node_modules
         run: node test/setup-check.js
 
+      # Its own virgin instance rather than sharing 3209: this check completes setup itself, so
+      # running both against one container would leave whichever ran second facing an
+      # already-configured instance and no setup form.
+      - name: Start a virgin instance for the empty-state check
+        run: |
+          docker run -d --name dadstats-virgin2 -p 3252:3211 \
+            -v dadstats-virgin2-data:/app/data dadstats:ci
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3252/api/health >/dev/null; then echo "up"; exit 0; fi
+            sleep 1
+          done
+          echo "second virgin instance failed to start"; docker logs dadstats-virgin2; exit 1
+
+      # A fresh account must open empty, and adding a kid must never presume basketball.
+      - name: Empty first-run state and sport choice
+        env:
+          APP_URL: http://localhost:3252
+          NODE_PATH: /tmp/pw/node_modules
+        run: node test/empty-state-check.js
+
       # Image and runtime invariants: no build toolchain, OCI labels, unprivileged process,
       # healthcheck reaches healthy, data survives a container *recreate*, and a bind mount to a
       # host path Docker had to create still starts. Manages its own containers.

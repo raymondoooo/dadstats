@@ -7,7 +7,7 @@
 //
 //   APP_URL=http://localhost:3208 ADMIN_PASSWORD=... node test/ui-check.js
 const { chromium } = require('playwright');
-const { provisionFamily, APP_URL: URL } = require('./helpers');
+const { provisionFamily, addProfile, APP_URL: URL } = require('./helpers');
 
 const SHOTS = __dirname + '/screenshots';
 
@@ -32,11 +32,7 @@ const SHOTS = __dirname + '/screenshots';
   await page.fill('#loginPassword', familyPassword);
   await page.click('#loginForm button[type=submit]');
 
-  await page.waitForSelector('#addProfileBtn', { timeout: 10000 });
-  page.once('dialog', (d) => d.accept('Test Kid'));
-  await page.click('#addProfileBtn');
-  // Creating a profile navigates straight into it (Kids & Teams -> profile screen, seasons list).
-  await page.waitForSelector('[data-openseason]', { timeout: 10000 });
+  await addProfile(page, 'Test Kid');
 
   await page.click('[data-openseason]');
   await page.waitForSelector('#scheduleGameBtn', { timeout: 10000 });

@@ -294,14 +294,31 @@ display `createdAt`).
 
 ### The `provisional` flag
 
-A device booting with an empty cache calls `defaultState()`, which fabricates a placeholder
-profile containing a fresh "Season 1". That season's id matches nothing on the server, so merging
-it in permanently added an empty season to the shared account **for every new phone or browser
-that ever signed in** — they accumulated forever and synced to everyone.
+A device booting with an empty cache calls `defaultState()`. That used to fabricate a placeholder
+profile containing a fresh "Season 1", whose id matched nothing on the server — so merging it in
+permanently added an empty season to the shared account **for every new phone or browser that ever
+signed in**. They accumulated forever and synced to everyone.
 
 `defaultState()` now marks itself `provisional: true`, `mergeStates` discards a provisional local
 wholesale in favour of the server, and `save()` clears the flag the moment the state becomes
 real. A genuinely new empty season created by the user still syncs normally.
+
+`defaultState()` is also empty now — no profile, no season — so a fresh account opens on an
+empty-state prompt rather than a fictional kid playing a sport nobody chose. That change is about
+first-run UX, but it makes this flag less load-bearing as a side effect: there is no longer
+anything in a provisional state that *could* pollute an account if the flag were ever lost.
+
+The flag still earns its place, because an empty local state is otherwise ambiguous — "this device
+hasn't synced yet" and "the user deleted everything" look identical, and only the first should
+defer wholesale to the server.
+
+> **Known gap:** tombstones cover players within a game and entries within a log, but *not*
+> profiles and seasons — `deleteProfile`/`deleteSeason` splice. On one device that's fine, since
+> the deletion is saved and the server takes it. With two devices, the other device's copy is
+> unioned back in on the next merge and the profile returns. This predates the empty default (it
+> applied to any profile deletion), but an empty account is now reachable, which makes it the most
+> visible form of the problem. Fixing it means giving profiles and seasons the same `removed` flag
+> games already use.
 
 ### Storage migrations
 

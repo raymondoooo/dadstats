@@ -7,7 +7,7 @@
 //
 //   APP_URL=http://localhost:3208 ADMIN_PASSWORD=... node test/sport-check.js
 const { chromium } = require('playwright');
-const { provisionFamily, APP_URL: URL } = require('./helpers');
+const { provisionFamily, addProfile, APP_URL: URL } = require('./helpers');
 
 const SHOTS = __dirname + '/screenshots';
 
@@ -32,12 +32,11 @@ const SHOTS = __dirname + '/screenshots';
   await page.fill('#loginPassword', password);
   await page.click('#loginForm button[type=submit]');
 
-  await page.waitForSelector('#addProfileBtn', { timeout: 10000 });
-  dialogQueue.push('Two Sport Kid');
-  await page.click('#addProfileBtn');
-  await page.waitForSelector('[data-openseason]', { timeout: 10000 });
+  // Explicitly basketball, so the soccer season added below is the second sport under one kid —
+  // which is the whole point of this suite, and used to rely on the form's default.
+  await addProfile(page, 'Two Sport Kid', 'basketball');
 
-  // --- Add a soccer season alongside the default basketball one ---
+  // --- Add a soccer season alongside the basketball one ---
   await page.click('#addSeasonBtn');
   await page.waitForSelector('#seasonForm', { state: 'visible', timeout: 5000 });
   await page.fill('#seasonNameInput', 'Spring Soccer');

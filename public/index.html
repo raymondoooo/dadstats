@@ -314,6 +314,7 @@
   .avg-name { font-family: -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif; }
   .row-actions { display: flex; gap: 2px; }
   .list-empty { font-size: 0.74rem; color: var(--ink-muted); }
+  .home-empty { font-size: 0.85rem; color: var(--ink-muted); padding: 18px 2px 6px; }
 
   .status-chip {
     font-size: 0.6rem;
@@ -756,7 +757,24 @@
   <div class="screen" id="homeView">
     <h2 class="screen-title">Kids &amp; Teams</h2>
     <div class="profile-grid" id="profileGrid"></div>
+    <div class="home-empty" id="homeEmpty" hidden>
+      Nobody here yet. Add a kid or a team to start tracking.
+    </div>
     <button class="add-tile" id="addProfileBtn">+ Add Kid/Team</button>
+    <!-- Same shape as the season form below, and for the same reason: a new profile needs a name
+         *and* a first sport. Asking for the sport here is what keeps the app from presuming
+         basketball for a kid who swims. -->
+    <form class="season-form" id="profileForm" hidden>
+      <label for="profileNameInput">Kid or team name</label>
+      <input type="text" id="profileNameInput" placeholder='e.g. "Jordan" or "Rec League Warriors"' />
+      <label for="profileSportInput">First sport</label>
+      <select id="profileSportInput"></select>
+      <div class="season-form-hint">Creates their first season. You can add more seasons later, in any sport.</div>
+      <div class="season-form-actions">
+        <button type="submit">Add</button>
+        <button type="button" class="ghost" id="profileFormCancel">Cancel</button>
+      </div>
+    </form>
   </div>
 
   <div class="screen" id="profileView">
@@ -1448,9 +1466,13 @@
   // season to the shared account for every new phone or browser that ever signed in. See
   // mergeStates, which discards a provisional local wholesale, and save(), which clears the flag
   // the moment this state becomes real.
+  // Deliberately empty. This used to fabricate a "Player 1" carrying a basketball "Season 1",
+  // which meant every brand-new account opened onto a fictional kid playing a sport nobody had
+  // chosen — wrong for the ten sports that aren't basketball, and busywork for the one that is.
+  // An empty state is also strictly safer to merge: `provisional` still short-circuits it below,
+  // but there is no longer anything here that *could* pollute an account if that flag were lost.
   function defaultState() {
-    var profile = freshProfile('Player 1');
-    return { profiles: [profile], nav: { screen: 'home', profileId: null }, provisional: true };
+    return { profiles: [], nav: { screen: 'home', profileId: null }, provisional: true };
   }
 
   // ---- migration chain: v1 (flat players) -> v2 (seasons) -> v3 (profiles) -> v4 (+stats/subs) -> v5 (staged games) ----
@@ -2256,12 +2278,16 @@
   // ---------- Home screen ----------
   function renderHome() {
     var grid = document.getElementById('profileGrid');
+    // Looked up rather than closed over: renderHome can run before the form's vars are assigned.
+    // Hidden while the form is open so the prompt isn't sitting above the thing it asks for.
+    var formOpen = !document.getElementById('profileForm').hidden;
+    document.getElementById('homeEmpty').hidden = state.profiles.length > 0 || formOpen;
     grid.innerHTML = state.profiles.map(function (pr) {
       var rec = profileRecord(pr);
       return '<div class="profile-tile" role="button" tabindex="0" data-openprofile="' + pr.id + '">' +
         '<div class="tile-actions">' +
           '<button class="icon-btn" data-renameprofile="' + pr.id + '" title="Rename" aria-label="Rename ' + escapeHtml(pr.name) + '">&#9998;</button>' +
-          (state.profiles.length > 1 ? '<button class="icon-btn danger" data-delprofile="' + pr.id + '" title="Delete" aria-label="Delete ' + escapeHtml(pr.name) + '">&times;</button>' : '') +
+          '<button class="icon-btn danger" data-delprofile="' + pr.id + '" title="Delete" aria-label="Delete ' + escapeHtml(pr.name) + '">&times;</button>' +
         '</div>' +
         '<div class="name">' + escapeHtml(pr.name) + '</div>' +
         '<div class="meta">' + pr.seasons.length + ' season' + (pr.seasons.length === 1 ? '' : 's') + '</div>' +
@@ -2295,7 +2321,8 @@
     }
   }
   function deleteProfile(id) {
-    if (state.profiles.length <= 1) return;
+    // No "can't delete the last one" guard any more: an account with no profiles is a legal state
+    // now (it's what a fresh one looks like), so there's nothing left for that guard to protect.
     var pr = getProfile(id);
     if (!confirm('Delete "' + pr.name + '"? This permanently deletes all their seasons and saved games.')) return;
     state.profiles = state.profiles.filter(function (p) { return p.id !== id; });
@@ -2304,14 +2331,39 @@
     render();
   }
 
-  document.getElementById('addProfileBtn').addEventListener('click', function () {
-    var name = prompt('Name this kid or team (e.g. "Jordan" or "Rec League Warriors"):');
-    if (name && name.trim()) {
-      var profile = freshProfile(name.trim());
-      state.profiles.push(profile);
-      save();
-      openProfile(profile.id);
-    }
+  var addProfileBtn = document.getElementById('addProfileBtn');
+  var profileForm = document.getElementById('profileForm');
+  var profileNameInput = document.getElementById('profileNameInput');
+  var profileSportInput = document.getElementById('profileSportInput');
+
+  function closeProfileForm() {
+    profileForm.hidden = true;
+    addProfileBtn.hidden = false;
+    profileNameInput.value = '';
+  }
+
+  addProfileBtn.addEventListener('click', function () {
+    profileForm.hidden = false;
+    addProfileBtn.hidden = true;
+    // Whatever the most recently added kid plays — siblings usually turn up in the same gym, and
+    // the very first profile on a fresh account falls through to DEFAULT_SPORT.
+    var last = state.profiles[state.profiles.length - 1];
+    var lastSeason = last && last.seasons[last.seasons.length - 1];
+    profileSportInput.value = sportOfSeason(lastSeason);
+    profileNameInput.focus();
+  });
+
+  document.getElementById('profileFormCancel').addEventListener('click', closeProfileForm);
+
+  profileForm.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var name = profileNameInput.value.trim();
+    if (!name) { profileNameInput.focus(); return; }
+    var profile = freshProfile(name, profileSportInput.value);
+    state.profiles.push(profile);
+    closeProfileForm();
+    save();
+    openProfile(profile.id);
   });
   document.getElementById('profileBackBtn').addEventListener('click', function () {
     state.nav = { screen: 'home', profileId: null };
@@ -2387,10 +2439,12 @@
   var addSeasonBtn = document.getElementById('addSeasonBtn');
 
   SPORT_KEYS.forEach(function (key) {
-    var opt = document.createElement('option');
-    opt.value = key;
-    opt.textContent = SPORTS[key].icon + '  ' + SPORTS[key].label;
-    seasonSportInput.appendChild(opt);
+    [seasonSportInput, profileSportInput].forEach(function (select) {
+      var opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = SPORTS[key].icon + '  ' + SPORTS[key].label;
+      select.appendChild(opt);
+    });
   });
 
   function closeSeasonForm() {

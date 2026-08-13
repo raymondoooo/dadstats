@@ -14,6 +14,7 @@
 //
 // test/run-account-check.sh drives all of that end to end.
 const { chromium } = require('playwright');
+const { addProfile } = require('./helpers');
 const URL = process.env.APP_URL;
 const PROFILE = '/tmp/leak-profile';
 
@@ -39,9 +40,7 @@ async function run(label, fn) {
       await page.fill('#setupPassword', 'real-family-password');
       await page.click('#setupSubmit');
       await page.waitForSelector('#addProfileBtn', { state: 'visible', timeout: 25000 });
-      q.push('Hayden');                       // stand-in for a real kid's name
-      await page.click('#addProfileBtn');
-      await page.waitForSelector('[data-openseason]', { timeout: 10000 });
+      await addProfile(page, 'Hayden');       // stand-in for a real kid's name
       await page.waitForTimeout(1500);
       console.log('  seeded a profile named Hayden');
     });
