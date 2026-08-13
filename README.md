@@ -83,10 +83,10 @@ your real data means you can't easily go back.
 
 Versions before `0.2.2` are not available — they had a bug that broke bind-mounted volumes.
 
-**`0.3.0` changes the port inside the container from 3108 to 3211**, so the host and container
+**`0.4.0` changes the port inside the container from 3108 to 3211**, so the host and container
 sides match in the docs and a `docker ps` line reads the same on both halves. If you're upgrading
-from `0.2.x` and want to keep your existing mapping, either update it to `-p 3211:3211` or pin
-the old port back:
+from `0.3.x` or earlier and want to keep your existing mapping, either update it to `-p 3211:3211`
+or pin the old port back:
 
 ```bash
 docker run -d -p 3108:3108 -e PORT=3108 -v dadstats-data:/app/data raymondoooo/dadstats
@@ -315,6 +315,18 @@ v1 flat players → v2 seasons → v3 profiles → v4 stats/subs → v5 staged g
 Legacy records lacking `id` / `metaUpdatedAt` get **deterministic, position-derived** ids
 (`legacy-p-<gameId>-<idx>`), so two devices migrating the same old data independently land on the
 same ids instead of minting different random ones and duplicating everything on first sync.
+
+---
+
+## Your browser's copy
+
+The client keeps a full copy of your account in the browser so it works with no signal and never
+blocks a tap on the network. That cache is tied to the account it came from — an instance
+identifier plus your family — and dropped if it doesn't match.
+
+That matters because browser storage is keyed by address, not by installation. Rebuild an
+instance at the same address, or sign a different family in on the same browser, and without that
+check the old account's games would be adopted and uploaded into the new one.
 
 ---
 

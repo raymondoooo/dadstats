@@ -1,6 +1,6 @@
 # Tests
 
-Six browser checks plus two non-browser suites. They drive a **running instance** over HTTP — there is no unit
+Seven browser checks plus three non-browser suites. They drive a **running instance** over HTTP — there is no unit
 test layer, because nearly all the logic lives in one browser-side file.
 
 Each test provisions its own throwaway family through the admin API (`helpers.js`), so runs never
@@ -107,6 +107,24 @@ with no error anywhere, and it only showed up when a background resync happened 
 session. The reload makes that path deterministic.
 
 Run it after touching `withDefaults`, `sanitize`, `parseValue`, or `seasonBests`.
+
+**`run-account-check.sh`** (drives `account-check.js`) — the one that came from a real report.
+localStorage is keyed by origin, and an origin outlives the container behind it. Rebuild an
+instance on the same host:port, or sign a different family in, and the browser still holds the
+previous account's games; without a guard the merge adopts them and **uploads them into the new
+account**. Someone set up a brand-new install and saw their kids' names, and the server really
+had stored them.
+
+It seeds one instance, destroys it container-and-volume, stands up a fresh one on the same port
+with the same browser profile, and asserts the new instance's database never receives the old
+data.
+
+```bash
+IMAGE=dadstats CPORT=3211 PORT=3280 ./test/run-account-check.sh
+```
+
+Run it after touching `apiGetState`, `mergeStates`, `discardCacheIfForeign`, or anything about
+how the client decides its cache is still valid.
 
 **`setup-check.js`** — on a virgin instance, asserts the setup form replaces the sign-in form,
 rejects a too-short password, signs you straight into the app with no second login, and then

@@ -121,6 +121,14 @@ function loadOrCreateJwtSecret() {
   return loadOrCreateSecret('.jwt_secret', process.env.JWT_SECRET, 48).value;
 }
 
+// A stable, non-secret identifier for this installation. Sent to the client so a browser can
+// tell whether its offline cache belongs to the instance now answering on this address — see
+// the account binding in public/index.html. Deliberately its own random value rather than
+// anything derived from JWT_SECRET, so handing it out reveals nothing.
+function loadOrCreateInstanceId() {
+  return loadOrCreateSecret('.instance_id', process.env.INSTANCE_ID, 16).value;
+}
+
 // Returned with `generated` so index.js can print a first-run banner — an auto-generated admin
 // password is useless if the owner never sees it.
 function loadOrCreateAdminPassword() {
@@ -128,6 +136,6 @@ function loadOrCreateAdminPassword() {
 }
 
 module.exports = {
-  db, initSchema, loadOrCreateJwtSecret, loadOrCreateAdminPassword,
+  db, initSchema, loadOrCreateJwtSecret, loadOrCreateAdminPassword, loadOrCreateInstanceId,
   SCHEMA_VERSION, currentVersion,
 };

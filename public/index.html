@@ -696,6 +696,7 @@
   }
   .login-error { color: var(--miss); font-size: 0.76rem; min-height: 1.2em; margin-bottom: 6px; }
   .login-hint { color: var(--ink-muted); font-size: 0.72rem; margin: -2px 0 12px; }
+  .version { display: block; margin-top: 6px; opacity: 0.65; font-variant-numeric: tabular-nums; }
   .setup-lede { color: var(--ink-muted); font-size: 0.82rem; margin: -4px 0 14px; }
   .setup-label {
     display: block; text-align: left; font-size: 0.66rem; text-transform: uppercase;
@@ -721,6 +722,7 @@
     <div class="login-hint" style="margin-top:14px">
       DadStats is free and self-hosted.
       <a href="https://ko-fi.com/raymondoooo" target="_blank" rel="noopener noreferrer">Support my work</a>
+      <span class="version" id="loginVersion"></span>
     </div>
   </form>
 
@@ -819,7 +821,8 @@
     </div>
   </div>
 
-  <footer>Taps save automatically &middot; safe to close and reopen mid-game</footer>
+  <footer>Taps save automatically &middot; safe to close and reopen mid-game
+    <span class="version" id="appVersion"></span></footer>
 </div>
 
 <script>
@@ -1692,6 +1695,30 @@
   var putQueued = false;        // a save landed while that write was out
   var hasUnsyncedEdits = false; // this device owes the server something (a push failed, or is pending)
 
+  // localStorage is keyed by origin, and an origin outlives whatever container is answering on
+  // it. Rebuild an instance on the same host:port, or sign a different family in, and this
+  // browser still holds the previous account's games — which the merge would then adopt and
+  // upload into the new account. Binding the cache to the account it came from is what stops
+  // that: on any mismatch the cache is dropped before it can be merged.
+  var ACCOUNT_KEY = 'dadstats_account';
+
+  function discardCacheIfForeign(account) {
+    if (!account) return; // server too old to say; leave the cache alone
+    var known = null;
+    try { known = localStorage.getItem(ACCOUNT_KEY); } catch (e) { /* storage unavailable */ }
+    if (known === account) return;
+
+    if (known !== null) {
+      // Not an error — it's the expected outcome of pointing a browser at a different account.
+      // Logged because silently discarding someone's local data deserves a trace.
+      console.warn('cached data belongs to a different account; discarding it');
+      try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
+      state = defaultState();
+      stateVersion = 0;
+    }
+    try { localStorage.setItem(ACCOUNT_KEY, account); } catch (e) { /* ignore */ }
+  }
+
   function apiGetState() {
     return fetch('/api/state', { credentials: 'same-origin' }).then(function (r) {
       if (r.status === 401) return { authed: false };
@@ -1700,6 +1727,8 @@
         // the tens-of-seconds clock skew this is actually correcting for.
         if (typeof body.serverNow === 'number') clockOffset = body.serverNow - Date.now();
         if (typeof body.version === 'number') stateVersion = body.version;
+        // Before anything merges: a cache from another account must not reach mergeStates.
+        discardCacheIfForeign(body.account);
         return { authed: true, state: body.state };
       });
     });
@@ -1970,7 +1999,23 @@
     connectEventStream();
   }
 
+  // Answers "which build is this?" without shelling into the container. /api/health needs no
+  // session, so it works on the login and setup screens as well as inside the app.
+  function showVersion() {
+    fetch('/api/health', { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (body) {
+        if (!body || !body.version) return;
+        ['appVersion', 'loginVersion'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (el) el.textContent = 'v' + body.version;
+        });
+      })
+      .catch(function () { /* a missing version line is not worth surfacing */ });
+  }
+
   function boot() {
+    showVersion();
     apiGetState().then(function (res) {
       if (res.authed) { finishBoot(res.state); return; }
       // Not signed in: ask the server whether this instance has any families at all. A brand new

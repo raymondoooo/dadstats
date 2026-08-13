@@ -20,6 +20,10 @@ WORKDIR /app
 # worse.
 RUN apk add --no-cache su-exec
 
+# Stamped by CI from the git tag so the footer shows the released version rather than whatever
+# package.json happens to say. A plain `docker build` leaves it unset and the app falls back.
+ARG APP_VERSION
+ENV APP_VERSION=$APP_VERSION
 ENV NODE_ENV=production
 ENV SQLITE_PATH=/app/data/dadstats.db
 # Stated explicitly so `docker inspect` shows it and the mapping in the docs is obvious.
