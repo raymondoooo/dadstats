@@ -1,7 +1,9 @@
 # Tests
 
-Seven browser checks plus three non-browser suites. They drive a **running instance** over HTTP — there is no unit
-test layer, because nearly all the logic lives in one browser-side file.
+Ten browser checks plus four non-browser suites. Most drive a **running instance** over HTTP —
+there is almost no unit test layer, because nearly all the logic lives in one browser-side file.
+The exception is `ical-guard-check.js`, which tests a pure server-side function that can't be
+exercised safely against a live instance (see its entry below).
 
 Each test provisions its own throwaway family through the admin API (`helpers.js`), so runs never
 collide with each other. Still, point them at a scratch instance, not the one with your real
@@ -31,10 +33,13 @@ node test/ui-check.js
 node test/admin-check.js
 node test/sport-check.js
 node test/measurement-check.js
+node test/tombstone-check.js
+node test/ical-check.js
 ```
 
-`setup-check.js` is the exception: first-run setup only exists on an instance with **no families
-at all**, so it needs its own untouched container.
+`setup-check.js` and `empty-state-check.js` are the exceptions: both assert on what a **virgin**
+instance looks like, and both complete first-run setup themselves — so each needs its own
+untouched container, and they can't share one with each other.
 
 ```bash
 docker run -d --name dadstats-fresh -p 3209:3211 -v dadstats-fresh-data:/app/data dadstats
@@ -42,11 +47,16 @@ APP_URL=http://localhost:3209 node test/setup-check.js
 
 # to run it again, throw the volume away — it only works once per instance
 docker rm -f dadstats-fresh && docker volume rm dadstats-fresh-data
+
+# empty-state-check.js needs its own, for the same reason
+docker run -d --name dadstats-fresh2 -p 3252:3211 -v dadstats-fresh2-data:/app/data dadstats
+APP_URL=http://localhost:3252 node test/empty-state-check.js
 ```
 
 ```bash
-# static — no container, no browser, runs in a second
+# static — no container, no browser, run in a second
 node test/markup-check.js
+node test/ical-guard-check.js
 
 # image + runtime invariants (manages its own containers, needs no browser)
 IMAGE=dadstats ./test/image-check.sh
@@ -149,9 +159,53 @@ Run it after touching the Dockerfile or `docker-entrypoint.sh`.
 from `NODE_ENV`, which silently broke login over plain HTTP), a wrong password is rejected, an
 unknown password does not create an account, `/api/setup` stays closed once configured, a family
 session can't reach the admin API, logout invalidates the session, and the rate limiter still
-trips when `X-Forwarded-For` is rotated.
+trips when `X-Forwarded-For` is rotated. Also that `/api/ical-proxy` requires a session and
+refuses loopback, LAN, cloud-metadata and IPv6-loopback targets — using IP literals, which the
+guard rejects on its own logic before any network call, so this exercises the real
+route → middleware → handler → guard wiring without needing a reachable target.
 
-Run it after touching anything in `server/auth.js`, `server/ratelimit.js`, or the setup handlers.
+Run it after touching anything in `server/auth.js`, `server/ratelimit.js`, `server/icalProxy.js`,
+or the setup handlers.
+
+**`tombstone-check.js`** — two browser contexts, and the one that proves deletes actually stick.
+Profiles and seasons used to splice on delete, and `mergeStates` unions profile lists by name and
+season lists by id — a union can't tell "never existed here" from "deleted here", so the other
+device put the deleted kid straight back on the next resync. Covers profile delete, reusing a
+deleted kid's name (a tombstone must not kill a *new* profile that merely shares a name), season
+delete, and deleting every season down to an empty profile.
+
+Run it after touching `deleteProfile`, `deleteSeason`, `addProfile` in `mergeStates`,
+`activeProfiles` / `activeSeasons`, or the nav fallbacks in `sanitize()`.
+
+**`empty-state-check.js`** — needs a **virgin** instance. A fresh account must open genuinely
+empty rather than on a fabricated "Player 1" carrying a basketball season nobody chose, and adding
+a kid must *ask* which sport rather than assuming. Also asserts the last profile can be deleted.
+
+Run it after touching `defaultState`, `renderHome`, or the add-kid form.
+
+**`ical-check.js`** — calendar feed import, driven through **request interception** rather than a
+real feed server. It stubs `/api/ical-proxy` in the browser and answers with canned ics text, so it
+tests the genuinely novel part — parsing and reconciliation — without touching the server's
+network boundary. Covers: events becoming games, `STATUS:CANCELLED` being skipped, a re-sync
+updating a rescheduled game instead of duplicating it, a scored game's players surviving a
+metadata-only re-sync untouched, and a game you deleted **not** coming back on the next sync.
+
+That last one is the subtle one: the season remembers every UID it has ever imported
+(`icsSeenUids`), independently of whether a game for it still exists, and that memory is
+*unioned* across devices in `mergeStates` rather than last-writer-wins — otherwise a device that
+missed the import could resurrect a deleted game on its next sync.
+
+Run it after touching `parseIcs`, `syncIcsFeed`, or the `icsSeenUids` union in `mergeStates`.
+
+**`ical-guard-check.js`** — static, no container, no network: the SSRF guard's address ranges
+(`isPrivateAddress`). This is the only pure-unit test in the suite, and deliberately so. The guard
+rejects every private address — which is exactly where a fixture server would have to live for a
+CI container to reach it, so testing it against a live feed server would mean weakening the very
+protection under test. Range coverage lives here; that the guard is actually *wired into* the real
+route is asserted live in `security-check.js` using IP literals, which reject before any network
+call happens.
+
+Run it after touching `server/icalProxy.js`.
 
 **`markup-check.js`** — static, instant, no container. Asserts every element id the client
 reaches for actually exists in the markup. The client builds HTML from strings, so a renamed or

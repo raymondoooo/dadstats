@@ -12,6 +12,7 @@ const {
   setupNeeded, setupStatus, completeSetup,
 } = require('./admin');
 const { loginLimiter } = require('./ratelimit');
+const { fetchIcsFeed, icsFeedLimiter } = require('./icalProxy');
 
 // Must happen before any request can hit login/requireAuth, both of which read
 // process.env.JWT_SECRET lazily per-call.
@@ -127,6 +128,11 @@ app.get('/api/events', requireAuth, (req, res) => {
     if (streams.size === 0) familyStreams.delete(req.familyId);
   });
 });
+
+// A season's schedule importer pastes a feed URL here and gets the raw text back — see
+// icalProxy.js for why this can't just be a client-side fetch(), and for the SSRF guard that
+// makes it safe to let an authenticated family member point it at an arbitrary URL.
+app.get('/api/ical-proxy', requireAuth, icsFeedLimiter, wrap(fetchIcsFeed));
 
 // --- App state: one JSON blob per family, synced across every device that family logs into. ---
 app.get('/api/state', requireAuth, (req, res) => {

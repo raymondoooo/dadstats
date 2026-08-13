@@ -23,6 +23,13 @@ jobs:
       - name: Markup check
         run: node test/markup-check.js
 
+      # Pure function, no container and no network: the SSRF guard's address ranges. Kept out of
+      # the live suite deliberately — a fixture server it could actually reach in CI would have to
+      # sit at a private address, which the guard correctly refuses, so exercising it live would
+      # mean weakening the thing under test. See test/ical-guard-check.js.
+      - name: Calendar feed SSRF guard (unit)
+        run: node test/ical-guard-check.js
+
       - name: Build image
         uses: docker/build-push-action@v7
         with:
@@ -69,7 +76,9 @@ jobs:
           node test/ui-check.js
           node test/sync-check.js
           node test/sport-check.js
+          node test/measurement-check.js
           node test/tombstone-check.js
+          node test/ical-check.js
 
       # First-run setup only exists on an instance with no families, so it needs its own
       # untouched container rather than the one the tests above have been creating families in.

@@ -51,6 +51,13 @@ turning it on without HTTPS silently breaks login; set it to `1` once TLS is in 
 `data/backups/` — can read every family's data and the generated secrets in `.jwt_secret` and
 `.admin_password`. Protect the volume the way you'd protect any database file.
 
+**`/api/ical-proxy` fetches a URL an authenticated family member supplies.** That's the shape of
+SSRF (CWE-918) if unguarded, so it resolves the target's hostname once, rejects private/loopback/
+link-local addresses, and connects to that literal resolved address — closing the DNS-rebinding
+gap where a second lookup could return something a first check never saw. Redirects are
+re-validated the same way, one hop at a time. See `server/icalProxy.js` and the README's
+"Importing a schedule" section.
+
 ## What I would consider a vulnerability
 
 - Any path that reads or writes one family's data while authenticated as another
@@ -59,3 +66,4 @@ turning it on without HTTPS silently breaks login; set it to `1` once TLS is in 
 - Bypassing the login rate limiter (e.g. by forging headers)
 - XSS, or injection into the SQLite queries
 - A way to recover a password or session token from anything the app serves
+- `/api/ical-proxy` reaching a private/loopback/link-local address, directly or via a redirect
