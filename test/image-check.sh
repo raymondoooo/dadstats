@@ -52,7 +52,7 @@ done
 
 echo "== runtime =="
 
-docker run -d --name "$NAME" -p "$PORT:3108" -v "$VOLUME:/app/data" "$IMAGE" >/dev/null
+docker run -d --name "$NAME" -p "$PORT:3211" -v "$VOLUME:/app/data" "$IMAGE" >/dev/null
 
 if wait_healthy "$NAME" 45; then
   pass "healthcheck reaches healthy"
@@ -86,7 +86,7 @@ before=$(curl -sf -b "$jar" "localhost:$PORT/api/admin/families" | grep -c '"id"
 # Recreate, not restart. A restart reuses the same container and would still pass if the data
 # lived in the container's writable layer instead of the volume.
 docker rm -f "$NAME" >/dev/null 2>&1
-docker run -d --name "$NAME" -p "$PORT:3108" -v "$VOLUME:/app/data" "$IMAGE" >/dev/null
+docker run -d --name "$NAME" -p "$PORT:3211" -v "$VOLUME:/app/data" "$IMAGE" >/dev/null
 wait_healthy "$NAME" 45 >/dev/null
 
 if curl -sf -X POST "localhost:$PORT/api/login" \
@@ -103,7 +103,7 @@ echo "== graceful shutdown =="
 # seconds, database killed mid-write). An open SSE stream also has to be closed explicitly or
 # server.close() waits on it forever.
 docker rm -f "$NAME" >/dev/null 2>&1
-docker run -d --name "$NAME" -p "$PORT:3108" -v "$VOLUME:/app/data" "$IMAGE" >/dev/null
+docker run -d --name "$NAME" -p "$PORT:3211" -v "$VOLUME:/app/data" "$IMAGE" >/dev/null
 wait_healthy "$NAME" 45 >/dev/null
 jar2=$(mktemp)
 curl -sf -c "$jar2" -X POST "localhost:$PORT/api/setup" -H 'Content-Type: application/json' \
@@ -126,7 +126,7 @@ echo "== bind mount =="
 # then can't open its own database. It killed the container outright before the entrypoint existed.
 docker rm -f "$NAME" >/dev/null 2>&1
 rm -rf "$BIND_DIR"
-docker run -d --name "$NAME" -p "$PORT:3108" -v "$BIND_DIR:/app/data" "$IMAGE" >/dev/null
+docker run -d --name "$NAME" -p "$PORT:3211" -v "$BIND_DIR:/app/data" "$IMAGE" >/dev/null
 if wait_healthy "$NAME" 45; then
   pass "starts on a bind mount to a host path Docker had to create"
 else

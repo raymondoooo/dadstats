@@ -42,11 +42,11 @@ stays awake while open).
 ## Quick start
 
 ```bash
-docker run -d --name dadstats -p 3108:3108 -v dadstats-data:/app/data \
+docker run -d --name dadstats -p 3211:3211 -v dadstats-data:/app/data \
   raymondoooo/dadstats
 ```
 
-Open `http://localhost:3108` and pick a family name and password. That's it — you're in.
+Open `http://localhost:3211` and pick a family name and password. That's it — you're in.
 
 Adding **more** families later (if you're hosting for other people) is done at
 `/admin`; the admin password is printed to the container logs on first run
@@ -71,10 +71,10 @@ full test suite as a stable release; what they haven't had is weeks of somebody'
 
 ```bash
 # stable (default)
-docker run -d -p 3108:3108 -v dadstats-data:/app/data raymondoooo/dadstats
+docker run -d -p 3211:3211 -v dadstats-data:/app/data raymondoooo/dadstats
 
 # beta — please report what breaks
-docker run -d -p 3108:3108 -v dadstats-beta:/app/data raymondoooo/dadstats:beta
+docker run -d -p 3211:3211 -v dadstats-beta:/app/data raymondoooo/dadstats:beta
 ```
 
 **Use a separate volume for a beta.** Upgrades migrate your database and are one-way: an older
@@ -82,6 +82,15 @@ image refuses to start against a newer schema rather than risk corrupting it. Tr
 your real data means you can't easily go back.
 
 Versions before `0.2.2` are not available — they had a bug that broke bind-mounted volumes.
+
+**`0.3.0` changes the port inside the container from 3108 to 3211**, so the host and container
+sides match in the docs and a `docker ps` line reads the same on both halves. If you're upgrading
+from `0.2.x` and want to keep your existing mapping, either update it to `-p 3211:3211` or pin
+the old port back:
+
+```bash
+docker run -d -p 3108:3108 -e PORT=3108 -v dadstats-data:/app/data raymondoooo/dadstats
+```
 
 ---
 
@@ -353,14 +362,14 @@ Single container, no external services:
 
 ```bash
 docker build -t dadstats .
-docker run -d --name dadstats -p 3108:3108 -v dadstats-data:/app/data dadstats
+docker run -d --name dadstats -p 3211:3211 -v dadstats-data:/app/data dadstats
 ```
 
 Every setting is optional — the command above works as-is.
 
 | Env var | Default | What it does |
 |---|---|---|
-| `PORT` | `3108` | Port inside the container. |
+| `PORT` | `3211` | Port the app listens on, inside the container. |
 | `SQLITE_PATH` | `/app/data/dadstats.db` | DB file. Keep it inside your mounted volume or data won't survive a restart. |
 | `ADMIN_PASSWORD` | auto-generated | Gate for `/admin`. If unset, generated on first boot, printed to the logs, and saved to `<data dir>/.admin_password`. |
 | `JWT_SECRET` | auto-generated | Generated on first boot and persisted to `<data dir>/.jwt_secret`, so sessions survive restarts with zero config. |

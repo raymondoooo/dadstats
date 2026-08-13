@@ -21,7 +21,7 @@ npx playwright install chromium
 Start an instance with a **known** admin password so the tests can create families:
 
 ```bash
-docker run -d --name dadstats-test -p 3208:3108 \
+docker run -d --name dadstats-test -p 3208:3211 \
   -e ADMIN_PASSWORD=test-admin-pw \
   -v dadstats-test-data:/app/data dadstats
 
@@ -37,7 +37,7 @@ node test/measurement-check.js
 at all**, so it needs its own untouched container.
 
 ```bash
-docker run -d --name dadstats-fresh -p 3209:3108 -v dadstats-fresh-data:/app/data dadstats
+docker run -d --name dadstats-fresh -p 3209:3211 -v dadstats-fresh-data:/app/data dadstats
 APP_URL=http://localhost:3209 node test/setup-check.js
 
 # to run it again, throw the volume away — it only works once per instance

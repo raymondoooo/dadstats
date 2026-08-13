@@ -194,7 +194,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'something went wrong' });
 });
 
-const port = process.env.PORT || 3108;
+const port = process.env.PORT || 3211;
 initSchema();
 
 const server = app.listen(port, () => {

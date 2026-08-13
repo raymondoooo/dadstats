@@ -22,6 +22,8 @@ RUN apk add --no-cache su-exec
 
 ENV NODE_ENV=production
 ENV SQLITE_PATH=/app/data/dadstats.db
+# Stated explicitly so `docker inspect` shows it and the mapping in the docs is obvious.
+ENV PORT=3211
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY . .
@@ -32,14 +34,14 @@ RUN chmod +x /app/docker-entrypoint.sh
 # whatever the image put at this path. See docker-entrypoint.sh.
 RUN mkdir -p /app/data
 
-EXPOSE 3108
+EXPOSE 3211
 VOLUME /app/data
 
 # Hits an endpoint that actually queries the database. A process that's listening but can't read
 # its own data is not healthy, and a plain port check would call it fine.
 # Node 22 has global fetch, so this needs nothing extra installed.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3108)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3211)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 LABEL org.opencontainers.image.title="DadStats" \
       org.opencontainers.image.description="Self-hosted sports stat tracker for kids' games, with live multi-device scoring" \

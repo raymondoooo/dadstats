@@ -4,7 +4,7 @@
 //   APP_URL=http://localhost:3209 node test/setup-check.js
 //
 // Start one with a throwaway volume first:
-//   docker run -d --name dadstats-fresh -p 3209:3108 -v dadstats-fresh-data:/app/data dadstats
+//   docker run -d --name dadstats-fresh -p 3209:3211 -v dadstats-fresh-data:/app/data dadstats
 //
 // Covers the security property as much as the UX: once a family exists, setup must be closed.
 const { chromium } = require('playwright');
