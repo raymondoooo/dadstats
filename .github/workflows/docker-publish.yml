@@ -230,3 +230,20 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # The Docker Hub listing is documentation too, and nothing was pushing it — it sat for four
+      # releases still telling people to map port 3108, which stopped being right in 0.4.0. Anyone
+      # copy-pasting that quick start got a container they couldn't reach. Syncing it here means
+      # the page can't drift from the file in the repo again.
+      #
+      # Stable only: a prerelease shouldn't rewrite the page that everyone on :latest reads.
+      - name: Sync Docker Hub description
+        if: ${{ !contains(github.ref_name, '-') }}
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/dadstats
+          # Docker Hub caps this at 100 characters and rejects anything longer — 97 here.
+          short-description: "Self-hosted stat tracker for kids' sports — score from the stands, two phones at once. 11 sports."
+          readme-filepath: ./docs/dockerhub-description.md

@@ -1,9 +1,10 @@
 # Tests
 
-Ten browser checks plus four non-browser suites. Most drive a **running instance** over HTTP —
+Ten browser checks plus five non-browser suites. Most drive a **running instance** over HTTP —
 there is almost no unit test layer, because nearly all the logic lives in one browser-side file.
-The exception is `ical-guard-check.js`, which tests a pure server-side function that can't be
-exercised safely against a live instance (see its entry below).
+The two exceptions earn it: `ical-guard-check.js` tests a server-side function that can't be
+exercised safely against a live instance, and `merge-growth-check.js` asserts on the shape of the
+state rather than on anything the screen shows (see their entries below).
 
 Each test provisions its own throwaway family through the admin API (`helpers.js`), so runs never
 collide with each other. Still, point them at a scratch instance, not the one with your real
@@ -57,6 +58,7 @@ APP_URL=http://localhost:3252 node test/empty-state-check.js
 # static — no container, no browser, run in a second
 node test/markup-check.js
 node test/ical-guard-check.js
+node test/merge-growth-check.js
 
 # image + runtime invariants (manages its own containers, needs no browser)
 IMAGE=dadstats ./test/image-check.sh
@@ -196,6 +198,24 @@ That last one is the subtle one: the season remembers every UID it has ever impo
 missed the import could resurrect a deleted game on its next sync.
 
 Run it after touching `parseIcs`, `syncIcsFeed`, or the `icsSeenUids` union in `mergeStates`.
+
+**`merge-growth-check.js`** — static, no container, no browser. Lifts the real `mergeStates` out
+of `index.html` and merges a state against itself repeatedly, asserting **the profile list does
+not grow**. This is a regression test for a bug that reached production: a tombstone sharing a
+name with a live profile could never claim the name key, so it failed to match itself and was
+appended on every merge — doubling each sync until one account held 13,440 copies of a single
+deleted kid and 2.5MB of state.
+
+The symptom was not duplicates. The UI filters tombstones, so the list looked perfectly normal;
+it was a phone that had become too slow to respond to a tap, because every save serialised and
+uploaded megabytes. Nothing that asserted on *what the screen shows* could have caught it, which
+is exactly why this one asserts on the state itself.
+
+Also covers: the tombstone stays dead, a re-created profile with a reused name isn't killed by
+the old tombstone, two devices adding the same kid still converge to one, and an already-bloated
+state collapses on load.
+
+Run it after touching `mergeStates`, `addProfile`, or `sanitize`.
 
 **`ical-guard-check.js`** — static, no container, no network: the SSRF guard's address ranges
 (`isPrivateAddress`). This is the only pure-unit test in the suite, and deliberately so. The guard
