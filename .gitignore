@@ -16,4 +16,9 @@ test/screenshots/
 # Local working notes, kept out of the published repo
 CLAUDE.md
 MORNING.md
-docs/dockerhub-description.md
+
+# docs/dockerhub-description.md used to be ignored, back when it was a scratch file to paste into
+# the Docker Hub description box by hand. It is now the source the release workflow publishes
+# from, so it has to be in the checkout — see "Sync Docker Hub description" in
+# .github/workflows/docker-publish.yml. Left ignored, the page silently went stale for four
+# releases while still telling people to map port 3108.

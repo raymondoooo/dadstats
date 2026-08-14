@@ -29,13 +29,18 @@ stays awake while open).
 
 | Scoring a live game | The season |
 |---|---|
-| <img src="docs/screenshots/tracker.png" alt="Player card mid-game: 11 points, an ON pill, a running sub clock, tap counters for rebounds and assists, and make/miss rows per shot type. Benched players collapse to one-line strips." width="330"> | <img src="docs/screenshots/season.png" alt="Season screen: a 2-1 record, per-player averages table, and the game list with W/L chips and an in-progress game." width="330"> |
-| On-court players sort to the top and keep a live clock. Everyone else collapses to a one-line strip, so a full roster still fits on a phone. | Averages count finalized games only, so a game in progress never skews them. |
+| <img src="docs/screenshots/tracker.png" alt="Player card mid-game: Jordan with 12 points, an ON pill, a running sub clock at 0:02, tap counters for rebounds, assists, steals, blocks and turnovers, and make/miss rows for 2PT, 3PT and FT with percentages. Three benched team-mates below as one-line strips with Sub In buttons." width="330"> | <img src="docs/screenshots/season.png" alt="Season screen for Winter 2026 at 2-1: a per-player averages table with three players, and four games with W and L chips and one marked in progress." width="330"> |
+| One card for whoever's on court, with a live clock. Everyone else collapses to a one-line strip, so a full roster still fits on a phone. | Averages count finalized games only, so the game in progress never skews them. |
 
 | One kid, two sports | Averages follow the sport |
 |---|---|
-| <img src="docs/screenshots/seasons.png" alt="Two seasons under one kid: Winter 2026 basketball at 2-1, Spring 2026 soccer at 2-0." width="330"> | <img src="docs/screenshots/soccer.png" alt="Soccer season averages showing goals, goals per game, assists, shots, shot percentage, saves, tackles and fouls." width="330"> |
-| The sport belongs to the season, so a basketball winter and a soccer spring share one name and one record. | Soccer shows goals and shot%, not PPG and FG% — the whole table changes with the sport. |
+| <img src="docs/screenshots/seasons.png" alt="Two seasons under one kid named Jordan: Winter 2026 tagged Basketball at 2-1 with 4 games, and Spring 2026 tagged Soccer." width="330"> | <img src="docs/screenshots/soccer.png" alt="Soccer season averages with columns for goals, goals per game, assists, shots, shot percentage, saves, tackles, fouls and minutes per game." width="330"> |
+| The sport belongs to the season, so a basketball winter and a soccer spring live under one name and one record. | Soccer shows goals and shot%, not PPG and FG% — the whole table changes with the sport. |
+
+| A schedule, imported | Sports that measure instead of counting |
+|---|---|
+| <img src="docs/screenshots/schedule-import.png" alt="Soccer season after importing a calendar feed: a status line reading schedule synced with 5 added, and five games marked SCHEDULED with dates and times from the feed." width="330"> | <img src="docs/screenshots/swimming.png" alt="A swim meet: three typed results — 50 Back 38.22, 100 Free 1:09.80, 50 Free 31.44 — with a dropdown of events and a free-text time field." width="330"> |
+| Paste a TeamSnap or league `.ics` URL and the season fills itself in. Re-syncing updates a rescheduled game instead of duplicating it. | Swimming, track, golf and bowling record a typed result per event rather than tap-counters, and track personal bests. |
 
 ---
 
@@ -46,12 +51,24 @@ docker run -d --name dadstats -p 3211:3211 -v dadstats-data:/app/data \
   raymondoooo/dadstats
 ```
 
-Open `http://localhost:3211` and pick a family name and password. That's it — you're in.
+Open `http://localhost:3211` and pick a family name and password. That's it — you're in. No config
+file, no database to provision, no logs to go fishing in.
 
-Adding **more** families later (if you're hosting for other people) is done at
-`/admin`; the admin password is printed to the container logs on first run
-(`docker logs dadstats`) or set with `-e ADMIN_PASSWORD=...`. See
-[Running it](#running-it) for the full config.
+<img src="docs/screenshots/first-run.png" alt="First run: a form asking for a family name and a password, with a note that this creates the first family and closes setup." width="330">
+
+That form only exists while the instance has no families. The moment one exists it closes
+permanently and the server rejects any further attempt — otherwise it would be an open sign-up
+page on whatever address you've exposed.
+
+Adding **more** families later (if you're hosting for other people) is done at `/admin`; the admin
+password is printed to the container logs on first run (`docker logs dadstats`) or set with
+`-e ADMIN_PASSWORD=...`. See [Running it](#running-it) for the full config.
+
+<img src="docs/screenshots/admin.png" alt="Admin page listing families with rename, new password and delete buttons, plus a form to create a family with a suggested password." width="330">
+
+Each family gets its own password and sees only its own kids. The admin can create, rename,
+re-password and delete families — but game data is an opaque blob to that surface, so the admin
+page can't read anyone's season.
 
 ---
 
@@ -62,8 +79,8 @@ Two channels. Stable is the default; nothing you do accidentally opts you into a
 | Tag | What it is |
 |---|---|
 | `latest` | Newest stable. Fine for most people. |
-| `0.2`, `0` | Newest stable within that minor / major. Pin here if you want updates but no surprises. |
-| `0.2.2` | Exactly that build, forever. |
+| `0.7`, `0` | Newest stable within that minor / major. Pin here if you want updates but no surprises. |
+| `0.7.2` | Exactly that build, forever. |
 | `beta` | Newest **prerelease**. Opt-in only — never served to `latest` or any stable pin. |
 
 Betas exist so new features get real use before they reach people mid-season. They pass the same
@@ -124,6 +141,8 @@ Kids & Teams  →  Seasons  →  Games  →  Tracker
 - **Seasons** — that profile's seasons with per-season record and game count.
 - **Games** — that season's games sorted soonest-first, plus a Season Averages table.
 - **Tracker** — one game: scoreboard, clock, and a card per player.
+
+<img src="docs/screenshots/home.png" alt="Kids and Teams screen: tiles for Jordan with 2 seasons and a 3-1 record, and Riley with 1 season, plus an Add Kid/Team button." width="330">
 
 Every level supports rename and delete, including deleting the last one — an account with no kids,
 or a kid with no seasons, shows an empty prompt rather than being prevented.
@@ -291,12 +310,15 @@ plays two sports has two seasons.
 Seasons created before multi-sport, or arriving from a device running older code, are treated as
 basketball.
 
-Not every sport fits this shape. The model is *a game, with players, accumulating tap-counters
-over time* — which covers invasion sports and, near enough, baseball. It does not cover sports
-whose results are measurements rather than counts: swimming and track (times, distances), golf
-(strokes against par), bowling (frames, with scoring that carries forward). Those need a
-different mode, and forcing them in here would produce a dropdown entry that's useless at the
-poolside.
+Measurement mode exists precisely because the tally model didn't stretch. Tallies assume *a game,
+with players, accumulating counters over time* — fine for invasion sports and, near enough,
+baseball, but wrong for a swimmer, where the whole result is one number per event. Adding
+swimming as a tally sport would have produced a dropdown entry that was useless at the poolside,
+so it got a second shape instead of a bad fit.
+
+The limits that remain are the ones noted above: golf is a round total rather than per-hole
+against par, and bowling is a game score rather than frame-by-frame scoring that carries
+forward. Both are real models this doesn't attempt.
 
 ---
 
@@ -479,8 +501,20 @@ Everything lives under one directory — the volume you mounted at `/app/data`:
 ├── dadstats.db          the entire database: families, kids, seasons, games
 ├── .jwt_secret          signing key for sessions
 ├── .admin_password      generated admin password (absent if you set ADMIN_PASSWORD)
+├── .instance_id         non-secret id identifying this install to browsers (see below)
 └── backups/             automatic pre-upgrade snapshots
 ```
+
+Those dotfiles are easy to miss. `rm -rf /app/data/*` leaves all four behind, and `.instance_id`
+in particular is what tells a browser this is the same install it saw before — so a "wipe and
+start over" that skips it hands your old cached data straight back to the new instance. Clear the
+directory with `rm -rf /app/data/* /app/data/.[!.]*`, or just delete the volume.
+
+**Stop the container before deleting anything.** Deleting the files under a running instance
+doesn't reclaim them: SQLite holds the database open, so it keeps happily reading and writing a
+file that no longer has a name, and `/api/health` keeps reporting `db: up` while the app serves
+data you thought you'd deleted. It looks exactly like a leak and isn't one. `docker compose down`
+first, then delete.
 
 **Back up that folder and you've backed up everything.** Stop the container first for a clean
 copy, or use `sqlite3 dadstats.db ".backup ..."` while it runs.
@@ -512,9 +546,13 @@ survives a merge with a device that still has it.
 
 ## Known constraints
 
-- **Every tap re-renders the whole card list and PUTs the entire state.** Fine at this scale; the
-  first thing to revisit if the app ever feels sluggish mid-game would be debouncing the PUT and
-  patching the DOM in place rather than rebuilding it.
+- **Every tap re-renders the whole card list and PUTs the entire state.** Fine at this scale — a
+  season is tens of kilobytes — but it makes the app's responsiveness proportional to total state
+  size, which is a sharp edge rather than a gentle one. A merge bug that quietly duplicated a
+  tombstone on every sync grew one account to 2.5MB and made a phone feel like it had stopped
+  responding to taps, with nothing visibly wrong on screen. `test/merge-growth-check.js` now
+  guards the "state must not grow on its own" half; debouncing the PUT and patching the DOM in
+  place is the fix for the rest, if it's ever needed.
 - **`prompt()` / `confirm()`** are used for naming and destructive confirmations. They work, but
   they're the least polished surface in the app.
 - **Profiles merge by name**, so renaming the same kid differently on two offline devices yields
