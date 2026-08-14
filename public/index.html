@@ -1604,6 +1604,24 @@
   // brief stretch of uncorrected local-vs-server latency, or a device that hasn't synced its offset
   // yet, can't compound across repeated merges.
   function sanitize(parsed, resetClocks) {
+    // Repair pass: collapse profiles that share an id. Nothing should produce those, but a merge
+    // bug did — a tombstone that shared a name with a live profile failed to match itself and was
+    // re-appended on every sync, reaching five figures of identical copies and multi-megabyte
+    // state on a real account. The merge no longer does that (see addProfile's byId lookup); this
+    // stays because it heals an already-damaged state on plain load, rather than only once a
+    // merge happens to run, and because silently correct is the right behaviour for a state this
+    // device may have been handed by an older client that still has the bug.
+    var seenIds = {};
+    parsed.profiles = (parsed.profiles || []).filter(function (pr) {
+      var first = seenIds[pr.id];
+      if (!first) { seenIds[pr.id] = pr; return true; }
+      first.removed = !!(first.removed || pr.removed);
+      var haveSeason = {};
+      (first.seasons || []).forEach(function (s) { haveSeason[s.id] = true; });
+      (pr.seasons || []).forEach(function (s) { if (!haveSeason[s.id]) first.seasons.push(s); });
+      return false;
+    });
+
     parsed.profiles.forEach(function (pr) {
       pr.removed = pr.removed || false;
       if (!pr.seasons) pr.seasons = [];
@@ -1986,19 +2004,27 @@
     // boot the user back to the home screen every time they switch back to the app mid-game.
     var merged = { profiles: [], nav: (local && local.nav) || { screen: 'home', profileId: null } };
     var byNameLower = {};
+    var byId = {};
     function addProfile(pr) {
       var key = (pr.name || '').trim().toLowerCase();
-      var existing = byNameLower[key];
 
-      // Profiles coalesce by name so two devices that each add the same kid before syncing end up
-      // with one of them. But a tombstone and a live profile that merely *share* a name are not
-      // the same profile — that's the user deleting "Jordan" and later adding a new "Jordan".
-      // Coalescing those by name would let the old tombstone kill the new profile on the next
-      // merge, so a pair that disagrees about deletion only coalesces when the ids match too.
-      var sameProfile = existing && existing.id === pr.id;
-      var acrossDelete = existing && !sameProfile && (!!existing.removed !== !!pr.removed);
+      // Matched by id FIRST, and only then by name. Id is the identity that always coalesces:
+      // it's literally the same profile arriving from both sides. Skipping this check is what
+      // caused a tombstone sharing a name with a live profile to be appended on every single
+      // merge — it could never own the name key, so it never matched itself, and one real
+      // account reached 13,440 copies of one deleted kid (2.5MB of state re-uploaded on every
+      // tap) before it was spotted.
+      var existing = byId[pr.id];
+      if (!existing) {
+        var named = byNameLower[key];
+        // Name coalescing is what lets two devices that each added the same kid before syncing
+        // end up with one of them. But a tombstone and a live profile that merely *share* a name
+        // are not the same profile — that's "deleted Jordan, then added a new Jordan" — so they
+        // only coalesce by name when they also agree about deletion.
+        if (named && (!!named.removed === !!pr.removed)) existing = named;
+      }
 
-      if (existing && !acrossDelete) {
+      if (existing) {
         // Deleted wins, the same way it does for players and log entries (see mergePlayer): the
         // other device simply hasn't been told yet, and resurrecting is the worse failure — the
         // user did an explicit, confirmed delete and watched it come back.
@@ -2028,9 +2054,12 @@
 
       var copy = JSON.parse(JSON.stringify(pr));
       merged.profiles.push(copy);
-      // The live profile owns the name; a tombstone rides along so its deletion keeps
-      // propagating, but never displaces a live profile from the lookup.
-      if (!existing || !copy.removed) byNameLower[key] = copy;
+      // Registered by id unconditionally — that's what guarantees this entry can match itself on
+      // the next merge instead of being appended again.
+      byId[copy.id] = copy;
+      // The live profile owns the name; a tombstone takes the name only if nothing else has it,
+      // so it never displaces a live profile from the lookup.
+      if (!byNameLower[key] || !copy.removed) byNameLower[key] = copy;
     }
     (local.profiles || []).forEach(addProfile);
     (server.profiles || []).forEach(addProfile);
