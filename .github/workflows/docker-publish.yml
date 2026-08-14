@@ -231,19 +231,49 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # The Docker Hub listing is documentation too, and nothing was pushing it — it sat for four
-      # releases still telling people to map port 3108, which stopped being right in 0.4.0. Anyone
-      # copy-pasting that quick start got a container they couldn't reach. Syncing it here means
-      # the page can't drift from the file in the repo again.
-      #
-      # Stable only: a prerelease shouldn't rewrite the page that everyone on :latest reads.
+  # Its own job, deliberately, rather than a final step of `publish`. The Docker Hub listing is
+  # documentation and nothing was pushing it — it sat for four releases still telling people to
+  # map port 3108, which stopped being right in 0.4.0, so anyone copy-pasting the quick start got
+  # a container they couldn't reach. Syncing from the repo means it can't drift again.
+  #
+  # Separated because the two failures mean different things and shouldn't share a red X. If this
+  # job fails, the images published perfectly well and only the description didn't — collapsing
+  # that into `publish: failure` says "the release broke", which isn't true and sends you looking
+  # in the wrong place.
+  #
+  # Stable only: a prerelease shouldn't rewrite the page everyone on :latest reads.
+  describe:
+    needs: publish
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Mapped to an env var because the `secrets` context can't be read from an `if:` condition.
+    env:
+      HAS_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Needs DOCKERHUB_PASSWORD (the account password), not the PAT used for pushing images:
+      # Docker Hub's description API rejects a PAT with "Forbidden", which is exactly how this
+      # failed the first time it ran. Absent the secret the job no-ops rather than failing every
+      # release — docs/dockerhub-description.md can always be pasted in by hand instead.
       - name: Sync Docker Hub description
-        if: ${{ !contains(github.ref_name, '-') }}
+        if: env.HAS_PASSWORD == 'true'
         uses: peter-evans/dockerhub-description@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/dadstats
           # Docker Hub caps this at 100 characters and rejects anything longer — 97 here.
           short-description: "Self-hosted stat tracker for kids' sports — score from the stands, two phones at once. 11 sports."
           readme-filepath: ./docs/dockerhub-description.md
+
+      - name: Note when the sync was skipped
+        if: env.HAS_PASSWORD != 'true'
+        run: |
+          echo "DOCKERHUB_PASSWORD is not set, so the Docker Hub description was not updated."
+          echo "Add it as a repository secret, or paste docs/dockerhub-description.md into the"
+          echo "description box on Docker Hub by hand."
+          echo "The images for this release published normally either way."
+
