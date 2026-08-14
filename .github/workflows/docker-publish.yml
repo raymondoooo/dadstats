@@ -30,6 +30,11 @@ jobs:
       - name: Calendar feed SSRF guard (unit)
         run: node test/ical-guard-check.js
 
+      # Runs the real mergeStates in a sandbox: repeated merges must not grow the state. A
+      # tombstone that failed to match itself once reached 13,440 copies on a live account.
+      - name: Merge does not grow the state (unit)
+        run: node test/merge-growth-check.js
+
       - name: Build image
         uses: docker/build-push-action@v7
         with:
