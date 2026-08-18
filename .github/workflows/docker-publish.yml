@@ -270,7 +270,7 @@ jobs:
       # release — docs/dockerhub-description.md can always be pasted in by hand instead.
       - name: Sync Docker Hub description
         if: env.HAS_PASSWORD == 'true'
-        uses: peter-evans/dockerhub-description@v4
+        uses: peter-evans/dockerhub-description@v5
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
