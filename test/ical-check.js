@@ -10,7 +10,7 @@
 //
 //   APP_URL=http://localhost:3270 ADMIN_PASSWORD=... node test/ical-check.js
 const { chromium } = require('playwright');
-const { provisionFamily, addProfile, APP_URL: URL } = require('./helpers');
+const { provisionFamily, addProfile, confirmDialog, APP_URL: URL } = require('./helpers');
 
 const fails = [];
 const eq = (label, got, want) => {
@@ -156,8 +156,8 @@ function vevent({ uid, summary, dtstart, status }) {
   ];
   await hawksRow.hover();
   const delBtn = await hawksRow.$('[data-delgame]');
-  page.once('dialog', (d) => d.accept());
   await delBtn.click();
+  await confirmDialog(page, 'delete game');
   await page.waitForTimeout(1000);
   rows = await gameRows();
   eq('the game is gone right after deleting it', rows.some((r) => r.name === 'vs Hawks'), false);

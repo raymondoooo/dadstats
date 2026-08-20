@@ -553,8 +553,12 @@ survives a merge with a device that still has it.
   responding to taps, with nothing visibly wrong on screen. `test/merge-growth-check.js` now
   guards the "state must not grow on its own" half; debouncing the PUT and patching the DOM in
   place is the fix for the rest, if it's ever needed.
-- **`prompt()` / `confirm()`** are used for naming and destructive confirmations. They work, but
-  they're the least polished surface in the app.
+- **Every dialog is one shared `<dialog>` element**, reconfigured per call by `askText`,
+  `askConfirm` and `showAlert`. Because they resolve a promise rather than blocking, the page
+  keeps running underneath — so a handler that mutates state re-resolves what it's touching by id
+  after the dialog closes, rather than trusting a reference captured before it opened. That
+  matters here specifically: a background resync can replace a game, a roster or a whole profile
+  mid-decision. Any new dialog call site needs the same treatment.
 - **Profiles merge by name**, so renaming the same kid differently on two offline devices yields
   two profiles rather than a conflict. Deliberate: nothing is ever silently lost, and merging two
   visible profiles by hand is easy.

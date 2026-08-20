@@ -21,11 +21,12 @@ const PROFILE = '/tmp/leak-profile';
 async function run(label, fn) {
   const ctx = await chromium.launchPersistentContext(PROFILE, { args: ['--no-sandbox'] });
   const page = ctx.pages()[0] || (await ctx.newPage());
-  const q = [];
-  page.on('dialog', (d) => d.accept(q.length ? q.shift() : ''));
+  // Nothing here should raise a native dialog any more — the app uses its own. Armed so a
+  // regression is reported rather than silently auto-dismissed.
+  page.on('dialog', (d) => { console.error('unexpected native dialog: ' + d.message()); d.dismiss(); });
   await page.goto(URL, { waitUntil: 'networkidle' });
   await page.waitForTimeout(1200);
-  const out = await fn(page, q);
+  const out = await fn(page);
   await ctx.close();
   return out;
 }
@@ -34,7 +35,7 @@ async function run(label, fn) {
   const phase = process.argv[2];
 
   if (phase === 'seed') {
-    await run('seed', async (page, q) => {
+    await run('seed', async (page) => {
       await page.waitForSelector('#setupForm', { state: 'visible', timeout: 15000 });
       await page.fill('#setupName', 'The Real Family');
       await page.fill('#setupPassword', 'real-family-password');

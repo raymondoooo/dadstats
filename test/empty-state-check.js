@@ -12,6 +12,7 @@
 // Drives the add-kid form directly rather than through helpers.addProfile, because the form
 // itself — that the sport picker exists and is populated — is what's under test here.
 const { chromium } = require('playwright');
+const { confirmDialog } = require('./helpers');
 const URL = process.env.APP_URL;
 
 // innerText of the app root, not body.textContent: the latter includes the inline <script>, where
@@ -77,13 +78,13 @@ function visibleText(page) {
     : bad(`the auto-created season is "${sport}", expected swimming`);
 
   // Deleting the last profile must be possible now that empty is a legal state.
-  p.on('dialog', (d) => d.accept());
   await p.click('#profileBackBtn');
   await p.waitForTimeout(600);
   const delBtn = await p.$('[data-delprofile]');
   if (!delBtn) { bad('no delete button on the only profile'); }
   else {
     await delBtn.click();
+    await confirmDialog(p, 'delete profile');
     await p.waitForTimeout(1200);
     const left = (await p.$$('[data-openprofile]')).length;
     left === 0 && (await p.isVisible('#homeEmpty'))

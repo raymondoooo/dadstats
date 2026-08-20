@@ -1,6 +1,6 @@
 {
   "name": "dadstats",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "description": "DadStats — self-hosted stat tracker with server-side cross-device sync",
   "license": "AGPL-3.0-or-later",
   "main": "server/index.js",

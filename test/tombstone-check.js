@@ -14,7 +14,7 @@
 // Needs two independent browser contexts against one family, like sync-check.
 //   APP_URL=... ADMIN_PASSWORD=... node test/tombstone-check.js
 const { chromium } = require('playwright');
-const { provisionFamily, APP_URL: URL } = require('./helpers');
+const { provisionFamily, confirmDialog, APP_URL: URL } = require('./helpers');
 
 let fails = 0;
 const ok = (m) => console.log('  ok    ' + m);
@@ -23,7 +23,9 @@ const bad = (m) => { console.log('  FAIL  ' + m); fails++; };
 async function device(browser, password) {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
-  page.on('dialog', (d) => d.accept());
+  // Deletes now go through the app's own dialog, not a native one. Kept armed so a native
+  // dialog creeping back in fails loudly instead of being silently auto-dismissed.
+  page.on('dialog', (d) => { console.log('  FAIL  unexpected native dialog: ' + d.message()); d.dismiss(); });
   await page.goto(URL, { waitUntil: 'networkidle' });
   await page.waitForSelector('#loginPassword', { timeout: 15000 });
   await page.fill('#loginPassword', password);
@@ -89,6 +91,7 @@ async function home(page) {
 
   // --- A deletes it while B still holds a copy ---
   await (await A.$('[data-delprofile]')).click();
+  await confirmDialog(A, 'delete profile');
   await A.waitForTimeout(2500);
   const aAfter = await profileNames(A);
   aAfter.length === 0 ? ok('A shows no profiles after deleting') : bad(`A still shows ${JSON.stringify(aAfter)}`);
@@ -147,6 +150,7 @@ async function home(page) {
     // Delete whichever season the button belongs to, then confirm it stays gone.
     const before = await seasonNames(A);
     await delSeason.click();
+    await confirmDialog(A, 'delete season');
     await A.waitForTimeout(2500);
     const after = await seasonNames(A);
     after.length === before.length - 1
@@ -177,6 +181,7 @@ async function home(page) {
       const btn = await A.$('[data-delseason]');
       if (!btn) break;
       await btn.click();
+      await confirmDialog(A, 'delete season');
       await A.waitForTimeout(1500);
     }
     const emptied = await seasonNames(A);

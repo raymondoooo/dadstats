@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
 
 //
 //   APP_URL=http://localhost:3208 ADMIN_PASSWORD=... node test/sync-check.js
-const { provisionFamily, addProfile, APP_URL: URL } = require('./helpers');
+const { provisionFamily, addProfile, scheduleGame, APP_URL: URL } = require('./helpers');
 
 const SHOTS = __dirname + '/screenshots';
 // Set once the family is provisioned; both devices sign in with it, which is the real-world
@@ -62,8 +62,7 @@ async function tap(page, sel, times = 1) {
   await addProfile(A.page, 'Sync Kid');
   await A.page.click('[data-openseason]');
   await A.page.waitForSelector('#scheduleGameBtn', { timeout: 10000 });
-  A.page.once('dialog', (d) => d.accept('Sync Game'));
-  await A.page.click('#scheduleGameBtn');
+  await scheduleGame(A.page, 'Sync Game');
   await A.page.waitForSelector('[data-make][data-key="made2"]', { timeout: 10000 });
   log('device A: created kid + game, sitting on the tracker');
 

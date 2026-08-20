@@ -180,6 +180,47 @@
     background: var(--surface-raised); color: var(--ink); margin-bottom: 10px;
   }
   .season-form-hint { color: var(--ink-muted); font-size: 0.7rem; margin-bottom: 12px; }
+
+  /* Centred rather than anchored to the tapped row: these interrupt what you're doing, and on a
+     phone mid-game the thumb is somewhere unpredictable. */
+  .modal {
+    border: none; padding: 0; background: transparent;
+    max-width: min(420px, calc(100vw - 32px)); width: 100%;
+    color: var(--ink);
+  }
+  .modal::backdrop { background: var(--scrim); }
+  .modal-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 20px; box-shadow: var(--shadow);
+  }
+  .modal-title { font-size: 1.02rem; font-weight: 800; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .modal-message { font-size: 0.86rem; color: var(--ink-muted); margin: 0 0 14px; line-height: 1.45; }
+  .modal-label {
+    display: block; font-size: 0.68rem; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--ink-muted); margin-bottom: 4px;
+  }
+  .modal-input {
+    width: 100%; padding: 11px 12px; font-size: 1rem; font-family: inherit;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--surface-raised); color: var(--ink); margin-bottom: 4px;
+  }
+  .modal-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .modal-error { color: var(--miss); font-size: 0.72rem; min-height: 1.1em; margin-bottom: 6px; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+  .modal-btn {
+    font: inherit; font-weight: 700; font-size: 0.85rem; cursor: pointer;
+    border: 1px solid transparent; border-radius: 10px; padding: 11px 16px;
+    background: var(--accent); color: var(--accent-ink);
+  }
+  .modal-btn.ghost { background: transparent; color: var(--ink-muted); border-color: var(--border); }
+  /* Destructive actions get a red confirm, so "Delete" never looks like the safe default. */
+  .modal-btn.danger { background: var(--miss); color: #fff; }
+  .modal-btn:active { transform: scale(0.98); }
+  .modal.no-input .modal-label,
+  .modal.no-input .modal-input,
+  .modal.no-input .modal-error { display: none; }
+  .modal.no-message .modal-message { display: none; }
+  .modal.no-cancel .modal-btn.ghost { display: none; }
   .season-form-actions { display: flex; gap: 8px; }
   .season-form-actions button {
     font: inherit; font-weight: 700; font-size: 0.8rem; cursor: pointer;
@@ -791,8 +832,9 @@
       No seasons yet. Add one to pick a sport and start recording games.
     </div>
     <button class="add-tile" id="addSeasonBtn">+ Add Season</button>
-    <!-- Inline rather than a modal: a season needs a name *and* a sport, which prompt() can't
-         collect in one step, and the app has no overlay machinery to justify adding for this. -->
+    <!-- Inline rather than going through the shared dialog: this collects two fields, and a form
+         that stays on the page while you pick a sport reads better than a modal that covers the
+         season list you're adding to. The dialog handles the single-field cases. -->
     <form class="season-form" id="seasonForm" hidden>
       <label for="seasonNameInput">Season name</label>
       <input type="text" id="seasonNameInput" placeholder="e.g. Fall 2026" />
@@ -878,6 +920,25 @@
     <span class="version" id="appVersion"></span></footer>
 </div>
 
+<!-- One dialog serves every prompt/confirm/alert in the app; askText/askConfirm/showAlert below
+     reconfigure it per call. A native <dialog> rather than a hand-rolled overlay because it comes
+     with the focus trap, Esc-to-dismiss, inertness of the page behind it, and top-layer stacking
+     already correct — all things a div would have to reimplement and get subtly wrong. It sits
+     outside #appRoot so it's usable from the sign-in screen too. -->
+<dialog class="modal" id="modal" aria-labelledby="modalTitle">
+  <form id="modalForm" class="modal-card">
+    <h2 class="modal-title" id="modalTitle"></h2>
+    <p class="modal-message" id="modalMessage"></p>
+    <label class="modal-label" for="modalInput" id="modalLabel">Name</label>
+    <input class="modal-input" id="modalInput" autocomplete="off" />
+    <div class="modal-error" id="modalError" role="alert"></div>
+    <div class="modal-actions">
+      <button type="button" class="modal-btn ghost" id="modalCancel">Cancel</button>
+      <button type="submit" class="modal-btn" id="modalConfirm">OK</button>
+    </div>
+  </form>
+</dialog>
+
 <script>
 (function () {
   var STORAGE_KEY = 'dadstats_v5';
@@ -889,6 +950,119 @@
 
   function uid() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  // ---------- Dialogs ----------
+  //
+  // Replaces prompt()/confirm()/alert(). Those blocked the whole page, looked like a browser
+  // error rather than part of the app, and on iOS render an unstyled sheet with the origin at the
+  // top — the least finished-looking thing here by a distance.
+  //
+  // Promise-based, which means every call site that used to branch on a synchronous return now
+  // continues inside .then(). That is not a cosmetic difference: the page keeps running while a
+  // dialog is open, so a background resync can replace the very objects a handler was holding.
+  // Call sites that mutate state must re-resolve what they're about to touch by id afterwards
+  // rather than trusting a reference captured before the dialog opened.
+  var modalEl = document.getElementById('modal');
+  var modalForm = document.getElementById('modalForm');
+  var modalInput = document.getElementById('modalInput');
+  var modalErrorEl = document.getElementById('modalError');
+  var modalSettle = null;
+
+  function finishModal(value) {
+    var settle = modalSettle;
+    modalSettle = null;
+    if (modalEl.open) modalEl.close();
+    if (settle) settle(value);
+  }
+
+  // Esc and the backdrop both count as cancelling. Without this the promise would never settle
+  // and the call site would silently do nothing for the rest of the session.
+  modalEl.addEventListener('cancel', function (ev) {
+    ev.preventDefault();
+    finishModal(null);
+  });
+  modalEl.addEventListener('close', function () {
+    if (modalSettle) finishModal(null);
+  });
+  document.getElementById('modalCancel').addEventListener('click', function () { finishModal(null); });
+
+  function openModal(opts) {
+    document.getElementById('modalTitle').textContent = opts.title || '';
+    document.getElementById('modalMessage').textContent = opts.message || '';
+    document.getElementById('modalLabel').textContent = opts.label || 'Name';
+    document.getElementById('modalConfirm').textContent = opts.confirmLabel || 'OK';
+    modalEl.classList.toggle('no-input', !opts.input);
+    modalEl.classList.toggle('no-message', !opts.message);
+    modalEl.classList.toggle('no-cancel', !!opts.noCancel);
+    document.getElementById('modalConfirm').classList.toggle('danger', !!opts.danger);
+    modalErrorEl.textContent = '';
+    modalInput.value = opts.value == null ? '' : opts.value;
+    modalInput.placeholder = opts.placeholder || '';
+
+    return new Promise(function (resolve) {
+      modalSettle = resolve;
+      modalEl.showModal();
+      if (opts.input) {
+        modalInput.focus();
+        modalInput.select();
+      } else {
+        // Focus the confirm button rather than leaving it on the dialog, so Enter works and a
+        // screen reader announces the action rather than silence.
+        document.getElementById('modalConfirm').focus();
+      }
+    });
+  }
+
+  modalForm.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    if (modalEl.classList.contains('no-input')) return finishModal(true);
+    var value = modalInput.value;
+    var validate = modalForm.dataset.validate;
+    if (validate === 'nonempty' && !value.trim()) {
+      modalErrorEl.textContent = 'Give it a name first.';
+      modalInput.focus();
+      return;
+    }
+    finishModal(value);
+  });
+
+  // Resolves with the entered string, or null if cancelled. `allowEmpty` is for the one caller
+  // that treats a blank name as "name it later" rather than as a mistake.
+  function askText(opts) {
+    modalForm.dataset.validate = opts.allowEmpty ? '' : 'nonempty';
+    return openModal({
+      title: opts.title,
+      message: opts.message,
+      label: opts.label,
+      value: opts.value,
+      placeholder: opts.placeholder,
+      confirmLabel: opts.confirmLabel || 'Save',
+      input: true,
+    });
+  }
+
+  // Resolves true only on an explicit confirm; Esc, backdrop and Cancel are all false.
+  function askConfirm(opts) {
+    modalForm.dataset.validate = '';
+    return openModal({
+      title: opts.title,
+      message: opts.message,
+      confirmLabel: opts.confirmLabel || 'OK',
+      danger: opts.danger,
+      input: false,
+    }).then(function (v) { return v === true; });
+  }
+
+  function showAlert(opts) {
+    modalForm.dataset.validate = '';
+    return openModal({
+      title: opts.title,
+      message: opts.message,
+      confirmLabel: opts.confirmLabel || 'OK',
+      input: false,
+      noCancel: true,
+    }).then(function () {});
   }
 
   // Correction applied to this device's own clock so timestamps stay comparable across devices —
@@ -2454,22 +2628,42 @@
   }
   function renameProfile(id) {
     var pr = getProfile(id);
-    var name = prompt('Rename this kid or team:', pr.name);
-    if (name && name.trim()) {
-      pr.name = name.trim();
+    if (!pr) return;
+    askText({
+      title: 'Rename kid or team',
+      label: 'Name',
+      value: pr.name,
+      confirmLabel: 'Rename',
+    }).then(function (name) {
+      if (name === null) return;
+      // Re-resolved by id: the dialog doesn't block the page, so a resync may have replaced this
+      // profile object while it was open. Same reason in every handler below.
+      var target = getProfile(id);
+      if (!target) return;
+      target.name = name.trim();
       save();
       render();
-    }
+    });
   }
   function deleteProfile(id) {
     // No "can't delete the last one" guard any more: an account with no profiles is a legal state
     // now (it's what a fresh one looks like), so there's nothing left for that guard to protect.
     var pr = getProfile(id);
-    if (!confirm('Delete "' + pr.name + '"? This permanently deletes all their seasons and saved games.')) return;
-    pr.removed = true; // tombstone, never splice — see activeProfiles
-    if (state.nav.profileId === id) state.nav = { screen: 'home', profileId: null };
-    save();
-    render();
+    if (!pr) return;
+    askConfirm({
+      title: 'Delete ' + pr.name + '?',
+      message: 'This permanently deletes all their seasons and saved games.',
+      confirmLabel: 'Delete',
+      danger: true,
+    }).then(function (ok) {
+      if (!ok) return;
+      var target = getProfile(id);
+      if (!target) return;
+      target.removed = true; // tombstone, never splice — see activeProfiles
+      if (state.nav.profileId === id) state.nav = { screen: 'home', profileId: null };
+      save();
+      render();
+    });
   }
 
   var addProfileBtn = document.getElementById('addProfileBtn');
@@ -2561,29 +2755,55 @@
     save();
     render();
   }
-  function renameSeason(seasonId) {
+  // Looks the season up fresh, from the profile the nav is on. Both handlers below re-run this
+  // after their dialog closes rather than reusing what they found before it opened.
+  function findSeason(seasonId) {
     var pr = activeProfile();
+    if (!pr) return null;
     var s = pr.seasons.filter(function (x) { return x.id === seasonId; })[0];
-    var name = prompt('Rename this season:', s.name);
-    if (name && name.trim()) {
-      s.name = name.trim();
+    return s ? { profile: pr, season: s } : null;
+  }
+
+  function renameSeason(seasonId) {
+    var found = findSeason(seasonId);
+    if (!found) return;
+    askText({
+      title: 'Rename season',
+      label: 'Season name',
+      value: found.season.name,
+      confirmLabel: 'Rename',
+    }).then(function (name) {
+      if (name === null) return;
+      var now = findSeason(seasonId);
+      if (!now) return;
+      now.season.name = name.trim();
       save();
       render();
-    }
+    });
   }
   function deleteSeason(seasonId) {
-    var pr = activeProfile();
-    var s = pr.seasons.filter(function (x) { return x.id === seasonId; })[0];
-    if (!confirm('Delete "' + s.name + '"? This permanently deletes its saved games.')) return;
-    s.removed = true; // tombstone, never splice — see activeSeasons
-    if (pr.activeSeasonId === seasonId) {
-      // May be none left; a seasonless profile is legal, and render falls back to its empty state.
-      var remaining = activeSeasons(pr);
-      pr.activeSeasonId = remaining.length ? remaining[0].id : null;
-      if (!remaining.length) state.nav = { screen: 'profile', profileId: pr.id };
-    }
-    save();
-    render();
+    var found = findSeason(seasonId);
+    if (!found) return;
+    askConfirm({
+      title: 'Delete ' + found.season.name + '?',
+      message: 'This permanently deletes its saved games.',
+      confirmLabel: 'Delete',
+      danger: true,
+    }).then(function (ok) {
+      if (!ok) return;
+      var now = findSeason(seasonId);
+      if (!now) return;
+      var pr = now.profile;
+      now.season.removed = true; // tombstone, never splice — see activeSeasons
+      if (pr.activeSeasonId === seasonId) {
+        // May be none left; a seasonless profile is legal, and render falls back to its empty state.
+        var remaining = activeSeasons(pr);
+        pr.activeSeasonId = remaining.length ? remaining[0].id : null;
+        if (!remaining.length) state.nav = { screen: 'profile', profileId: pr.id };
+      }
+      save();
+      render();
+    });
   }
 
   var seasonForm = document.getElementById('seasonForm');
@@ -2881,10 +3101,21 @@
         ev.stopPropagation();
         var gameId = el.dataset.delgame;
         var game = season.games.filter(function (g) { return g.id === gameId; })[0];
-        if (!confirm('Delete "' + (game ? game.name : 'this game') + '"? This cannot be undone.')) return;
-        season.games = season.games.filter(function (g) { return g.id !== gameId; });
-        save();
-        renderSeasonScreen();
+        askConfirm({
+          title: 'Delete ' + (game ? game.name : 'this game') + '?',
+          message: 'This cannot be undone.',
+          confirmLabel: 'Delete',
+          danger: true,
+        }).then(function (ok) {
+          if (!ok) return;
+          // Re-read the season rather than closing over the one captured at render time: a
+          // resync while the dialog was open may have replaced it.
+          var current = activeSeasonOf(activeProfile());
+          if (!current) return;
+          current.games = current.games.filter(function (g) { return g.id !== gameId; });
+          save();
+          renderSeasonScreen();
+        });
       });
     });
   }
@@ -2958,15 +3189,26 @@
     render();
   });
   document.getElementById('scheduleGameBtn').addEventListener('click', function () {
-    var name = prompt('Name this game (e.g. "vs Eagles") — leave blank to name it later:');
-    if (name === null) return;
-    var pr = activeProfile();
-    var season = activeSeasonOf(pr);
-    var finalName = name.trim() || ('Game ' + (season.games.length + 1));
-    var game = freshGame(finalName, pr.name, sportOfSeason(season));
-    season.games.unshift(game);
-    save();
-    openGame(game.id);
+    // allowEmpty: naming a game before it happens is often guesswork, and "name it later" is a
+    // legitimate answer — an empty value falls back to "Game N" rather than being rejected.
+    askText({
+      title: 'Schedule a game',
+      label: 'Opponent or name',
+      placeholder: 'e.g. vs Eagles',
+      message: 'Leave blank to name it later.',
+      confirmLabel: 'Schedule',
+      allowEmpty: true,
+    }).then(function (name) {
+      if (name === null) return;
+      var pr = activeProfile();
+      var season = activeSeasonOf(pr);
+      if (!pr || !season) return;
+      var finalName = name.trim() || ('Game ' + (season.games.length + 1));
+      var game = freshGame(finalName, pr.name, sportOfSeason(season));
+      season.games.unshift(game);
+      save();
+      openGame(game.id);
+    });
   });
 
   // ---------- Tracker screen (a specific game) ----------
@@ -3123,38 +3365,62 @@
       // Checked on blur rather than every keystroke, so typing a name that happens to pass
       // through another player's current name mid-edit (e.g. "Jake" -> "Jake Jr") isn't blocked.
       el.addEventListener('blur', function () {
-        var players = activeGame().players;
+        var game = activeGame();
+        if (!game) return;
+        var players = game.players;
         var idx = +el.dataset.idx;
         var p = players[idx];
+        if (!p) return;
+
         if (hasDuplicateName(players, idx, p.name)) {
-          alert('Another player in this game is already named "' + p.name.trim() + '". Player names must be unique within a game.');
+          var rejected = p.name.trim();
+          // Reverted before the dialog, not after. The dialog no longer blocks, so leaving the
+          // rejected name in place until it's dismissed would let the debounced write, or a
+          // resync, carry a duplicate name to the other device.
           p.name = lastGoodName;
           el.value = lastGoodName;
           p.metaUpdatedAt = nowIso();
           cancelNameSave(); // drop the pending write of the rejected name
           save();           // persist the revert instead
-        } else {
-          var targets = renameTargetsInSeason(activeGameSeason(), activeGame().id, lastGoodName, p.name);
-          var spread = false;
-          if (targets.length) {
-            var games = {};
-            targets.forEach(function (t) { games[t.game.id] = true; });
-            var n = Object.keys(games).length;
-            if (confirm('Also rename "' + lastGoodName.trim() + '" to ' + p.name.trim() + ' in ' +
-                        n + ' other game' + (n === 1 ? '' : 's') + ' this season?\n\n' +
-                        'Keeps the season averages under one name instead of two.')) {
-              applyRename(targets, p.name);
-              spread = true;
-            }
-          }
-          lastGoodName = p.name;
-          if (spread) {
-            cancelNameSave(); // the save below already carries this game's rename
-            save();
-          } else {
-            flushNameSave(); // commit now rather than waiting out the debounce
-          }
+          showAlert({
+            title: 'Name already used',
+            message: 'Another player in this game is already named "' + rejected +
+                     '". Player names must be unique within a game.',
+          });
+          return;
         }
+
+        var from = lastGoodName;
+        var to = p.name;
+        var gameId = game.id;
+        var targets = renameTargetsInSeason(activeGameSeason(), gameId, from, to);
+        lastGoodName = to;
+        // This game's own rename is committed now, whatever the fanout dialog decides. Holding a
+        // debounced write open across an interaction of unbounded length is asking for it to fire
+        // at the wrong moment.
+        flushNameSave();
+        if (!targets.length) return;
+
+        var games = {};
+        targets.forEach(function (t) { games[t.game.id] = true; });
+        var n = Object.keys(games).length;
+        askConfirm({
+          title: 'Rename in ' + n + ' other game' + (n === 1 ? '' : 's') + '?',
+          message: 'Also rename "' + from.trim() + '" to "' + to.trim() + '" in the rest of this ' +
+                   'season. Keeps the season averages under one name instead of two.',
+          confirmLabel: 'Rename everywhere',
+        }).then(function (ok) {
+          if (!ok) return;
+          // Recomputed from scratch: the targets found above hold references to game and player
+          // objects that a resync may have replaced while the dialog was open, and writing
+          // through those would edit copies that are no longer part of the state.
+          var found = findGameInProfile(activeProfile(), gameId);
+          if (!found) return;
+          var fresh = renameTargetsInSeason(found.season, gameId, from, to);
+          if (!fresh.length) return;
+          applyRename(fresh, to);
+          save();
+        });
       });
     });
     cardsEl.querySelectorAll('[data-make], [data-miss]').forEach(function (el) {
@@ -3439,14 +3705,29 @@
     if (activePlayers(g).length <= 1) return;
     var p = g.players[idx];
     if (!p || p.removed) return;
-    if (confirm('Remove ' + (p.name || 'this player') + '? This clears their stats.')) {
-      p.removed = true;
-      p.onCourt = false; // don't leave a tombstoned player holding a running clock
-      p.subInAt = null;
-      p.metaUpdatedAt = nowIso();
+    var playerId = p.id;
+    var gameId = g.id;
+    askConfirm({
+      title: 'Remove ' + (p.name || 'this player') + '?',
+      message: 'This clears their stats for this game.',
+      confirmLabel: 'Remove',
+      danger: true,
+    }).then(function (ok) {
+      if (!ok) return;
+      // By id, not by index: a resync while the dialog was open can reorder the roster, and
+      // removing by a stale index would tombstone whoever happens to sit there now.
+      var found = findGameInProfile(activeProfile(), gameId);
+      if (!found) return;
+      var target = found.game.players.filter(function (x) { return x.id === playerId; })[0];
+      if (!target || target.removed) return;
+      if (activePlayers(found.game).length <= 1) return;
+      target.removed = true;
+      target.onCourt = false; // don't leave a tombstoned player holding a running clock
+      target.subInAt = null;
+      target.metaUpdatedAt = nowIso();
       save();
       render();
-    }
+    });
   }
 
   document.getElementById('addPlayerBtn').addEventListener('click', function () {
@@ -3464,13 +3745,27 @@
   });
 
   document.getElementById('resetStatsBtn').addEventListener('click', function () {
-    if (confirm('Reset all stats for this game? This clears every player\'s numbers and the W/L result. Cannot be undone.')) {
-      var g = activeGame();
+    var startedOn = activeGame();
+    if (!startedOn) return;
+    var gameId = startedOn.id;
+    askConfirm({
+      title: 'Reset all stats for this game?',
+      message: "This clears every player's numbers and the W/L result. It cannot be undone.",
+      confirmLabel: 'Reset stats',
+      danger: true,
+    }).then(function (ok) {
+      if (!ok) return;
+      // Re-resolved by the id captured before the dialog opened, so a resync that navigated or
+      // replaced the game can't send this at whatever game happens to be open now — wiping the
+      // wrong game's stats is exactly the mistake worth spending a lookup to avoid.
+      var found = findGameInProfile(activeProfile(), gameId);
+      if (!found) return;
+      var g = found.game;
       // Resets in place instead of rebuilding via emptyPlayer(): that minted a fresh random id for
       // every player, so the next merge with a device still holding the old ids unioned the two
       // sets and duplicated the whole roster. Log entries are tombstoned rather than dropped for
       // the same reason Undo tombstones — an emptied log is just re-unioned from the other device.
-      var resetSport = activeSport();
+      var resetSport = sportOfSeason(found.season);
       g.players.forEach(function (p) {
         (p.log || []).forEach(function (e) { e.removed = true; });
         recomputeFromLog(p, resetSport);
@@ -3484,7 +3779,7 @@
       g.clockRunning = true;
       save();
       render();
-    }
+    });
   });
 
   function finalizeGame(result) {
