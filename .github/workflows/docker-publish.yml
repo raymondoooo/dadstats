@@ -84,6 +84,7 @@ jobs:
           node test/measurement-check.js
           node test/tombstone-check.js
           node test/ical-check.js
+          node test/ical-file-check.js
           node test/dialog-check.js
 
       # First-run setup only exists on an instance with no families, so it needs its own

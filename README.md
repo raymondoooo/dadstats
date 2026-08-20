@@ -40,7 +40,7 @@ stays awake while open).
 | A schedule, imported | Sports that measure instead of counting |
 |---|---|
 | <img src="docs/screenshots/schedule-import.png" alt="Soccer season after importing a calendar feed: a status line reading schedule synced with 5 added, and five games marked SCHEDULED with dates and times from the feed." width="330"> | <img src="docs/screenshots/swimming.png" alt="A swim meet: three typed results — 50 Back 38.22, 100 Free 1:09.80, 50 Free 31.44 — with a dropdown of events and a free-text time field." width="330"> |
-| Paste a TeamSnap or league `.ics` URL and the season fills itself in. Re-syncing updates a rescheduled game instead of duplicating it. | Swimming, track, golf and bowling record a typed result per event rather than tap-counters, and track personal bests. |
+| Paste a TeamSnap or league `.ics` URL, or import a downloaded `.ics` file. Re-syncing updates a rescheduled game instead of duplicating it. | Swimming, track, golf and bowling record a typed result per event rather than tap-counters, and track personal bests. |
 
 ---
 
@@ -172,9 +172,18 @@ Two more rules keep the averages honest:
 
 ### Importing a schedule
 
-Staging a season by hand is fine for a dozen games; a league's TeamSnap or website calendar feed
-is usually faster. On the season screen, **+ Import from calendar feed** takes an `.ics` URL and
-turns each event into a game — its name from the event title, its date/time from `DTSTART`.
+Staging a season by hand is fine for a dozen games; a league's TeamSnap or website calendar is
+usually faster. The season screen's **Import** button takes either an `.ics` **URL** or a
+downloaded `.ics` **file**, and turns each event into a game — its name from the event title, its
+date/time from `DTSTART`.
+
+**Prefer the URL when the league offers one.** A URL is a subscription: press Sync whenever you
+like and a rescheduled game updates in place. A file is a one-time snapshot, so there is no Sync
+button afterwards and you re-import when the schedule changes. Some leagues only ever hand out a
+file, which is why both exist.
+
+A file is read entirely in the browser and never uploaded — it is already on your device, so the
+proxy below (and its whole SSRF surface) has nothing to do with that path.
 
 What it does and doesn't do:
 

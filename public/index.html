@@ -285,6 +285,21 @@
     font-size: 0.72rem; color: var(--ink-muted);
     margin-top: 6px; min-height: 1em;
   }
+  /* A rule with the word centred in it, so the two import routes read as alternatives rather
+     than as steps to complete in order. */
+  .ics-or {
+    display: flex; align-items: center; gap: 10px;
+    margin: 4px 0 12px; color: var(--ink-muted);
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .ics-or::before, .ics-or::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
+  #icsFileInput {
+    width: 100%; font-size: 0.82rem; font-family: inherit; color: var(--ink-muted);
+    padding: 9px 10px; margin-bottom: 4px;
+    border: 1px dashed var(--border); border-radius: 9px; background: transparent;
+  }
 
   .profile-grid {
     display: grid;
@@ -868,12 +883,24 @@
       <label for="icsUrlInput">Calendar feed URL</label>
       <input type="url" id="icsUrlInput" placeholder="https://... (TeamSnap, league site, etc.)" />
       <div class="season-form-hint">
-        Reads each event's name and date/time and adds it as a game. Never touches a game you've
-        already scored, and never deletes one on its own — if the league cancels a game, remove
-        it here yourself.
+        A URL keeps working: press Sync whenever you like and a rescheduled game updates in place.
+      </div>
+
+      <div class="ics-or"><span>or</span></div>
+
+      <label for="icsFileInput">Import a downloaded .ics file</label>
+      <input type="file" id="icsFileInput" accept=".ics,text/calendar" />
+      <div class="season-form-hint">
+        A one-time snapshot, for leagues that only offer a download — there's no Sync afterwards,
+        so re-import the file when the schedule changes.
+      </div>
+
+      <div class="season-form-hint">
+        Either way: each event's name and date/time becomes a game. Never touches a game you've
+        already scored, never deletes one on its own, and won't bring back one you deleted.
       </div>
       <div class="season-form-actions">
-        <button type="submit">Save &amp; sync</button>
+        <button type="submit" id="icsFormSubmit">Import</button>
         <button type="button" class="ghost" id="icsFormCancel">Cancel</button>
       </div>
     </form>
@@ -3008,6 +3035,58 @@
   // whose UID was imported before but has no live game now (the user deleted it) is deliberately
   // left alone: icsSeenUids is the memory that stops it from being recreated. See the merge note
   // on icsSeenUids for why that memory has to be unioned, not just copied, across devices.
+  // Shared by the URL feed and the file import: everything after "we have the text" is identical,
+  // and these rules matter far too much to keep two copies of.
+  //
+  // `verb` only changes the status wording. A file is a one-time import with no Sync button after
+  // it, so calling that a "sync" would promise something the UI doesn't offer.
+  function applyIcsText(season, text, verb) {
+    var events = parseIcs(text);
+    if (!events.length) throw new Error('No events found in that calendar.');
+
+    season.icsSeenUids = season.icsSeenUids || [];
+    var seen = {};
+    season.icsSeenUids.forEach(function (u) { seen[u] = true; });
+    var byUid = {};
+    season.games.forEach(function (g) { if (g.icsUid) byUid[g.icsUid] = g; });
+
+    var added = 0, updated = 0, skipped = 0;
+    var pr = activeProfile();
+    // Caps one import's damage if a calendar is huge or malformed — a season's real schedule is a
+    // few dozen games at most.
+    events.slice(0, 500).forEach(function (ev) {
+      var name = ev.summary || 'Game';
+      var existing = byUid[ev.uid];
+      if (existing) {
+        if (existing.name !== name || new Date(existing.createdAt).getTime() !== ev.start.getTime()) {
+          existing.name = name;
+          existing.createdAt = ev.start.toISOString();
+          existing.updatedAt = nowIso();
+          updated++;
+        }
+        return;
+      }
+      if (seen[ev.uid]) { skipped++; return; }
+      var game = freshGame(name, pr.name, sportOfSeason(season));
+      game.createdAt = ev.start.toISOString();
+      game.icsUid = ev.uid;
+      season.games.push(game);
+      seen[ev.uid] = true;
+      season.icsSeenUids.push(ev.uid);
+      added++;
+    });
+    season.icsLastSyncedAt = nowIso();
+    save();
+    renderSeasonScreen();
+    var parts = [];
+    if (added) parts.push(added + ' added');
+    if (updated) parts.push(updated + ' updated');
+    if (skipped) parts.push(skipped + ' skipped (deleted since last import)');
+    document.getElementById('icsStatus').textContent =
+      'Schedule ' + verb + ' ' + formatDate(season.icsLastSyncedAt) +
+      (parts.length ? ' — ' + parts.join(', ') : ' — no changes');
+  }
+
   function syncIcsFeed(season) {
     var statusEl = document.getElementById('icsStatus');
     statusEl.textContent = 'Syncing…';
@@ -3015,53 +3094,46 @@
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { ok: r.ok, body: b }; }); })
       .then(function (res) {
         if (!res.ok) throw new Error((res.body && res.body.error) || 'Could not fetch that feed.');
-        var events = parseIcs(res.body.text);
-        if (!events.length) throw new Error('No events found in that feed.');
-
-        season.icsSeenUids = season.icsSeenUids || [];
-        var seen = {};
-        season.icsSeenUids.forEach(function (u) { seen[u] = true; });
-        var byUid = {};
-        season.games.forEach(function (g) { if (g.icsUid) byUid[g.icsUid] = g; });
-
-        var added = 0, updated = 0, skipped = 0;
-        var pr = activeProfile();
-        // Caps one sync's damage if a feed is huge or malformed — a season's real schedule is a
-        // few dozen games at most.
-        events.slice(0, 500).forEach(function (ev) {
-          var name = ev.summary || 'Game';
-          var existing = byUid[ev.uid];
-          if (existing) {
-            if (existing.name !== name || new Date(existing.createdAt).getTime() !== ev.start.getTime()) {
-              existing.name = name;
-              existing.createdAt = ev.start.toISOString();
-              existing.updatedAt = nowIso();
-              updated++;
-            }
-            return;
-          }
-          if (seen[ev.uid]) { skipped++; return; }
-          var game = freshGame(name, pr.name, sportOfSeason(season));
-          game.createdAt = ev.start.toISOString();
-          game.icsUid = ev.uid;
-          season.games.push(game);
-          seen[ev.uid] = true;
-          season.icsSeenUids.push(ev.uid);
-          added++;
-        });
-        season.icsLastSyncedAt = nowIso();
-        save();
-        renderSeasonScreen();
-        var parts = [];
-        if (added) parts.push(added + ' added');
-        if (updated) parts.push(updated + ' updated');
-        if (skipped) parts.push(skipped + ' skipped (deleted since last sync)');
-        statusEl.textContent = 'Schedule synced ' + formatDate(season.icsLastSyncedAt) +
-          (parts.length ? ' — ' + parts.join(', ') : ' — no changes');
+        applyIcsText(season, res.body.text, 'synced');
       })
       .catch(function (err) {
         statusEl.textContent = (err && err.message) || 'Sync failed.';
       });
+  }
+
+  // Read in the browser and never uploaded: the file is already on the device, so this path has
+  // nothing to do with the proxy or its SSRF surface.
+  var MAX_ICS_BYTES = 5 * 1024 * 1024;
+
+  function importIcsFile(season, file) {
+    var statusEl = document.getElementById('icsStatus');
+    if (file.size > MAX_ICS_BYTES) {
+      statusEl.textContent = 'That file is too large to be a schedule.';
+      return Promise.resolve();
+    }
+    statusEl.textContent = 'Reading ' + file.name + '…';
+    return new Promise(function (resolve) {
+      var reader = new FileReader();
+      reader.onerror = function () {
+        statusEl.textContent = 'Could not read that file.';
+        resolve();
+      };
+      reader.onload = function () {
+        try {
+          var text = String(reader.result || '');
+          // Checked before parsing so picking the wrong file says so, rather than reporting the
+          // altogether more confusing "No events found".
+          if (!/BEGIN:VCALENDAR/i.test(text.slice(0, 2000))) {
+            throw new Error("That doesn't look like a calendar file.");
+          }
+          applyIcsText(season, text, 'imported');
+        } catch (err) {
+          statusEl.textContent = (err && err.message) || 'Could not import that file.';
+        }
+        resolve();
+      };
+      reader.readAsText(file);
+    });
   }
 
   function gameRowHtml(g) {
@@ -3130,6 +3202,7 @@
   var icsSyncBtn = document.getElementById('icsSyncBtn');
   var icsForm = document.getElementById('icsForm');
   var icsUrlInput = document.getElementById('icsUrlInput');
+  var icsFileInput = document.getElementById('icsFileInput');
 
   // The header actions are the whole UI for this now — the feed's URL isn't worth permanent
   // screen space above the games, so it lives in the form (which opens prefilled and therefore
@@ -3139,26 +3212,39 @@
     var formOpen = !icsForm.hidden;
     icsAddBtn.hidden = formOpen;
     icsAddBtn.textContent = season.icsUrl ? 'Feed' : 'Import';
+    // Sync only exists for a URL. A file import has nothing to re-fetch, so offering the button
+    // would promise a refresh that can't happen.
     icsSyncBtn.hidden = formOpen || !season.icsUrl;
-    // This is the resting value. syncIcsFeed writes its own richer line ("… — 3 added") *after*
-    // the re-render it triggers, so the detail survives the sync itself and this takes over again
-    // next time the screen is rebuilt.
+    // This is the resting value. applyIcsText writes its own richer line ("… — 3 added") *after*
+    // the re-render it triggers, so the detail survives the import itself and this takes over
+    // again next time the screen is rebuilt.
     if (!formOpen) {
-      document.getElementById('icsStatus').textContent = !season.icsUrl ? ''
-        : season.icsLastSyncedAt ? 'Schedule synced ' + formatDate(season.icsLastSyncedAt)
-        : 'Feed set — not synced yet';
+      var status = '';
+      if (season.icsUrl) {
+        status = season.icsLastSyncedAt
+          ? 'Schedule synced ' + formatDate(season.icsLastSyncedAt)
+          : 'Feed set — not synced yet';
+      } else if (season.icsLastSyncedAt) {
+        // No URL but a recorded import: this season came from a file. Worth distinguishing, so
+        // the absent Sync button reads as intentional rather than missing.
+        status = 'Schedule imported ' + formatDate(season.icsLastSyncedAt);
+      }
+      document.getElementById('icsStatus').textContent = status;
     }
   }
 
   function openIcsForm(prefill) {
     icsForm.hidden = false;
     icsUrlInput.value = prefill || '';
+    icsFileInput.value = '';
     renderIcsPanel(activeSeasonOf(activeProfile()));
+    updateIcsSubmitLabel();
     icsUrlInput.focus();
   }
   function closeIcsForm() {
     icsForm.hidden = true;
     icsUrlInput.value = '';
+    icsFileInput.value = '';
     renderIcsPanel(activeSeasonOf(activeProfile()));
   }
 
@@ -3168,16 +3254,40 @@
   });
   document.getElementById('icsFormCancel').addEventListener('click', closeIcsForm);
 
+  // One submit covers both routes. A chosen file wins over a typed URL: picking a file is the
+  // more deliberate action of the two, and a URL left over from a previous visit shouldn't
+  // quietly take precedence over the thing you just selected.
   icsForm.addEventListener('submit', function (ev) {
     ev.preventDefault();
-    var url = icsUrlInput.value.trim();
-    if (!url) { icsUrlInput.focus(); return; }
     var season = activeSeasonOf(activeProfile());
+    if (!season) return;
+    var file = icsFileInput.files && icsFileInput.files[0];
+    var url = icsUrlInput.value.trim();
+
+    if (file) {
+      closeIcsForm();
+      importIcsFile(season, file);
+      return;
+    }
+    if (!url) {
+      document.getElementById('icsStatus').textContent = 'Paste a feed URL, or choose an .ics file.';
+      icsUrlInput.focus();
+      return;
+    }
     season.icsUrl = url;
     save();
     closeIcsForm();
     syncIcsFeed(season);
   });
+
+  // The submit button's label follows whichever route is armed, so it never says "Import" while
+  // about to save a subscription, or vice versa.
+  function updateIcsSubmitLabel() {
+    var hasFile = !!(icsFileInput.files && icsFileInput.files[0]);
+    document.getElementById('icsFormSubmit').textContent = hasFile ? 'Import file' : 'Save & sync';
+  }
+  icsFileInput.addEventListener('change', updateIcsSubmitLabel);
+  icsUrlInput.addEventListener('input', updateIcsSubmitLabel);
 
   document.getElementById('icsSyncBtn').addEventListener('click', function () {
     syncIcsFeed(activeSeasonOf(activeProfile()));
