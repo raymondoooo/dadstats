@@ -42,6 +42,18 @@ else
   pass "no build toolchain in runtime image"
 fi
 
+# npm is deleted from the runtime stage (see Dockerfile). Nothing runs it — CMD is node directly,
+# the healthcheck is `node -e`, the entrypoint is su-exec — but it vendors a dependency tree whose
+# CVEs get reported against this image and can only be fixed by upstream Node shipping a newer
+# npm. Every High and Critical in the published 0.8.0 image came from exactly that, and removing
+# it took the report to zero. Asserted because a future edit to the runtime stage could restore it
+# without anyone noticing until a scanner lights up months later.
+if docker run --rm --entrypoint sh "$IMAGE" -c 'command -v npm npx' >/dev/null 2>&1; then
+  fail "runtime image still ships npm (it vendors CVEs and nothing here runs it)"
+else
+  pass "npm is absent from the runtime image"
+fi
+
 for label in org.opencontainers.image.source org.opencontainers.image.licenses org.opencontainers.image.title; do
   if [ -n "$(docker image inspect "$IMAGE" --format "{{index .Config.Labels \"$label\"}}" 2>/dev/null)" ]; then
     pass "label $label"

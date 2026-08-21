@@ -20,6 +20,20 @@ WORKDIR /app
 # worse.
 RUN apk add --no-cache su-exec
 
+# npm is a build-time tool and nothing in the runtime invokes it: CMD runs `node` directly, the
+# healthcheck is `node -e`, and the entrypoint is su-exec plus exec. It is not free to keep,
+# though — it vendors its own dependency tree, and scanners report those CVEs against this image
+# for as long as it sits here.
+#
+# That was the entire vulnerability report for the published 0.8.0 image: one critical and six
+# high, every one of them in npm's bundled tar / undici / brace-expansion / ip-address, and none
+# of them reachable because npm never runs. Worse, they were unfixable from here — the patch
+# arrives whenever upstream Node bundles a newer npm, on nobody's schedule but theirs.
+#
+# Deleting it retires that whole category rather than waiting it out, and drops the image a few
+# megabytes. test/image-check.sh asserts it stays gone.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
 # Stamped by CI from the git tag so the footer shows the released version rather than whatever
 # package.json happens to say. A plain `docker build` leaves it unset and the app falls back.
 ARG APP_VERSION
