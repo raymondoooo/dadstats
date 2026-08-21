@@ -7,7 +7,7 @@
 //
 //   APP_URL=http://localhost:3208 ADMIN_PASSWORD=... node test/sport-check.js
 const { chromium } = require('playwright');
-const { provisionFamily, addProfile, APP_URL: URL } = require('./helpers');
+const { provisionFamily, addProfile, scheduleGame, APP_URL: URL } = require('./helpers');
 
 const SHOTS = __dirname + '/screenshots';
 
@@ -17,10 +17,10 @@ const SHOTS = __dirname + '/screenshots';
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-  // One persistent dialog handler fed by a queue. Using page.once() per prompt leaves a handler
-  // armed whenever an expected dialog doesn't appear, and it then races the next one.
-  const dialogQueue = [];
-  page.on('dialog', (d) => d.accept(dialogQueue.length ? dialogQueue.shift() : ''));
+  // Native dialogs are gone, so nothing here should ever produce one. Left armed as an assertion:
+  // if a prompt()/confirm() ever creeps back in, Playwright auto-dismisses it and the test fails
+  // somewhere confusing instead. This turns that into a named error.
+  page.on('dialog', (d) => { errors.push('unexpected native dialog: ' + d.message()); d.dismiss(); });
   page.on('response', (r) => {
     if (r.status() >= 400 && !(r.status() === 401 && r.url().endsWith('/api/state'))) {
       errors.push('http ' + r.status() + ' ' + r.url());
@@ -56,8 +56,7 @@ const SHOTS = __dirname + '/screenshots';
   const soccerRow = await page.$('[data-openseason]:has-text("Spring Soccer")');
   await soccerRow.click();
   await page.waitForSelector('#scheduleGameBtn', { timeout: 5000 });
-  dialogQueue.push('vs Rovers');
-  await page.click('#scheduleGameBtn');
+  await scheduleGame(page, 'vs Rovers');
   await page.waitForSelector('[data-make][data-key="goals"]', { timeout: 10000 });
 
   // Button faces should read Goal/Miss, not Make/Miss.
@@ -119,8 +118,7 @@ const SHOTS = __dirname + '/screenshots';
   const bballRow = await page.$('[data-openseason]:has-text("Season 1")');
   await bballRow.click();
   await page.waitForSelector('[data-make][data-key="made2"], #scheduleGameBtn', { timeout: 5000 });
-  dialogQueue.push('vs Hoops');
-  await page.click('#scheduleGameBtn');
+  await scheduleGame(page, 'vs Hoops');
   await page.waitForSelector('[data-make][data-key="made2"]', { timeout: 10000 });
   const bballShots = await page.$$eval('.shot-group .shot-tag', (els) =>
     els.map((e) => e.textContent.trim().split('\n')[0])

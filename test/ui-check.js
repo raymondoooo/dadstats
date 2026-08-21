@@ -7,7 +7,7 @@
 //
 //   APP_URL=http://localhost:3208 ADMIN_PASSWORD=... node test/ui-check.js
 const { chromium } = require('playwright');
-const { provisionFamily, addProfile, APP_URL: URL } = require('./helpers');
+const { provisionFamily, addProfile, scheduleGame, APP_URL: URL } = require('./helpers');
 
 const SHOTS = __dirname + '/screenshots';
 
@@ -37,9 +37,8 @@ const SHOTS = __dirname + '/screenshots';
   await page.click('[data-openseason]');
   await page.waitForSelector('#scheduleGameBtn', { timeout: 10000 });
 
-  // scheduleGameBtn prompts for a name, then navigates straight into the tracker.
-  page.once('dialog', (d) => d.accept('Test Game'));
-  await page.click('#scheduleGameBtn');
+  // Naming a game goes through the in-page dialog, then navigates straight into the tracker.
+  await scheduleGame(page, 'Test Game');
   await page.waitForSelector('[data-make][data-key="made2"]', { timeout: 10000 });
 
   async function tap(sel) {
@@ -59,8 +58,8 @@ const SHOTS = __dirname + '/screenshots';
   const statRowText = (await page.textContent('.stat-row')).replace(/\s+/g, ' ').trim();
   await page.screenshot({ path: SHOTS + '/tracker.png' });
 
-  // Finalize as a Win, then back out to the season screen to read Season Averages.
-  page.once('dialog', (d) => d.accept());
+  // Finalize as a Win, then back out to the season screen to read Season Averages. (There was a
+  // dialog handler armed here for years; finalizing has never shown one, so it never fired.)
   await page.click('#markWinBtn');
   await page.waitForTimeout(300);
   await page.click('#trackerBackBtn');

@@ -8,7 +8,7 @@
 //
 //   APP_URL=http://localhost:3270 ADMIN_PASSWORD=... node test/measurement-check.js
 const { chromium } = require('playwright');
-const { provisionFamily, addProfile, APP_URL: URL } = require('./helpers');
+const { provisionFamily, addProfile, scheduleGame, APP_URL: URL } = require('./helpers');
 
 const SHOTS = __dirname + '/screenshots';
 
@@ -17,9 +17,10 @@ const SHOTS = __dirname + '/screenshots';
   const browser = await chromium.launch({ args: ['--no-sandbox'] });
   const page = await browser.newPage({ viewport: { width: 414, height: 900 } });
   const errors = [];
-  const dialogQueue = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-  page.on('dialog', (d) => d.accept(dialogQueue.length ? dialogQueue.shift() : ''));
+  // Native dialogs are gone; this stays armed so a reintroduced prompt()/confirm() surfaces as a
+  // named error rather than as Playwright silently dismissing it and the test failing elsewhere.
+  page.on('dialog', (d) => { errors.push('unexpected native dialog: ' + d.message()); d.dismiss(); });
   page.on('response', (r) => {
     if (r.status() >= 400 && !(r.status() === 401 && r.url().endsWith('/api/state'))) {
       errors.push('http ' + r.status() + ' ' + r.url());
@@ -52,8 +53,7 @@ const SHOTS = __dirname + '/screenshots';
 
   await page.locator('[data-openseason]', { hasText: 'Summer League' }).first().click();
   await page.waitForSelector('#scheduleGameBtn', { timeout: 5000 });
-  dialogQueue.push('County Meet');
-  await page.click('#scheduleGameBtn');
+  await scheduleGame(page, 'County Meet');
   await page.waitForSelector('[data-resultvalue]', { timeout: 10000 });
 
   // The tally UI must be absent entirely — not merely empty.
@@ -86,7 +86,13 @@ const SHOTS = __dirname + '/screenshots';
   await page.selectOption('[data-resultevent="0"]', 'free50');
   await page.fill('[data-resultvalue="0"]', 'not a time');
   await page.click('[data-resultsave="0"]');
-  await page.waitForTimeout(300);
+  // Waits for the message to appear rather than sleeping a fixed 300ms. On a loaded machine the
+  // re-render can take longer than that, and the assertion then read an empty string and reported
+  // "bad input not rejected" — a failure about the machine, not the app.
+  await page.waitForFunction(() => {
+    const el = document.querySelector('[data-resulterror="0"]');
+    return el && el.textContent.trim().length > 0;
+  }, { timeout: 5000 }).catch(() => {});
   const errText = (await page.textContent('[data-resulterror="0"]')).trim();
   if (!/couldn't read/i.test(errText)) fails.push(`bad input not rejected clearly: "${errText}"`);
   eq('bad input did not create a row', await page.$$eval('.result-row', (e) => e.length), 4);
@@ -142,8 +148,7 @@ const SHOTS = __dirname + '/screenshots';
   await page.waitForTimeout(500);
   await page.locator('[data-openseason]', { hasText: 'Winter Bowling' }).first().click();
   await page.waitForSelector('#scheduleGameBtn', { timeout: 5000 });
-  dialogQueue.push('League Night');
-  await page.click('#scheduleGameBtn');
+  await scheduleGame(page, 'League Night');
   await page.waitForSelector('[data-resultvalue]', { timeout: 10000 });
 
   await addResult('game', '142');

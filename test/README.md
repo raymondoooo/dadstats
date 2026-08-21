@@ -1,6 +1,6 @@
 # Tests
 
-Ten browser checks plus five non-browser suites. Most drive a **running instance** over HTTP —
+Twelve browser checks plus five non-browser suites. Most drive a **running instance** over HTTP —
 there is almost no unit test layer, because nearly all the logic lives in one browser-side file.
 The two exceptions earn it: `ical-guard-check.js` tests a server-side function that can't be
 exercised safely against a live instance, and `merge-growth-check.js` asserts on the shape of the
@@ -36,6 +36,8 @@ node test/sport-check.js
 node test/measurement-check.js
 node test/tombstone-check.js
 node test/ical-check.js
+node test/ical-file-check.js
+node test/dialog-check.js
 ```
 
 `setup-check.js` and `empty-state-check.js` are the exceptions: both assert on what a **virgin**
@@ -198,6 +200,34 @@ That last one is the subtle one: the season remembers every UID it has ever impo
 missed the import could resurrect a deleted game on its next sync.
 
 Run it after touching `parseIcs`, `syncIcsFeed`, or the `icsSeenUids` union in `mergeStates`.
+
+**`ical-file-check.js`** — importing a downloaded `.ics` file rather than subscribing to a URL.
+Some leagues only ever hand out a file, so it's the only way in for those teams.
+
+It shares `applyIcsText` with the URL path, and that's the point: the rules that took real effort
+to get right — match by UID, refresh only name and date, never resurrect a game you deleted — must
+hold identically whichever way the text arrived. Without this suite it would be easy for the file
+route to quietly become a dumber "just add everything" importer.
+
+Also asserts the file path never touches `/api/ical-proxy` (the file is already on the device, so
+it's parsed in the browser), that no Sync button is offered afterwards, and that picking a
+non-calendar file says so rather than reporting the more confusing "no events found".
+
+Run it after touching `applyIcsText`, `importIcsFile`, or the import form.
+
+**`dialog-check.js`** — the shared in-page dialog's *dismiss* paths. Every other suite only ever
+confirms, which means they would all still pass if Cancel silently did nothing, if Escape left the
+dialog stuck open, or if the promise never settled and that button quietly stopped working for the
+rest of the session. Those are the failure modes a promise-based replacement for `confirm()` is
+most likely to introduce, and the ones a user hits by accident rather than on purpose.
+
+Covers: cancel and Escape both leave state untouched, a dialog reopens after being dismissed,
+renames reject an empty name with a visible message, scheduling a game *accepts* an empty name and
+falls back to "Game N", and Reset Stats fires on confirm but not on cancel.
+
+Validated by making cancel resolve `true`: the suite reports `profile deleted despite cancel`.
+
+Run it after touching `askText` / `askConfirm` / `showAlert` or any call site of theirs.
 
 **`merge-growth-check.js`** — static, no container, no browser. Lifts the real `mergeStates` out
 of `index.html` and merges a state against itself repeatedly, asserting **the profile list does

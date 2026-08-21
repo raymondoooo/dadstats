@@ -84,4 +84,54 @@ async function addProfile(page, name, sport) {
   await page.waitForSelector('[data-openseason]', { timeout: 10000 });
 }
 
-module.exports = { provisionFamily, pruneTestFamilies, addProfile, APP_URL };
+// The app replaced every prompt()/confirm()/alert() with one in-page <dialog>, so suites can no
+// longer drive these with page.on('dialog'). Playwright's dialog event only fires for the native
+// ones — a handler left in place simply never runs, and the test hangs on whatever it expected to
+// happen next. These three are the replacement.
+//
+// Deliberately fail loudly rather than no-op when the dialog isn't open: a silent no-op here would
+// let a test "pass" while the interaction it meant to exercise never happened.
+async function expectDialog(page, what) {
+  try {
+    await page.waitForSelector('#modal[open]', { state: 'attached', timeout: 5000 });
+  } catch {
+    throw new Error('expected a dialog to open for: ' + what);
+  }
+}
+
+// Confirms whatever dialog is open. Works for both confirm-style and alert-style dialogs.
+async function confirmDialog(page, label) {
+  await expectDialog(page, label || 'confirm');
+  await page.click('#modalConfirm');
+  await page.waitForSelector('#modal[open]', { state: 'detached', timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(150);
+}
+
+async function dismissDialog(page, label) {
+  await expectDialog(page, label || 'cancel');
+  await page.click('#modalCancel');
+  await page.waitForTimeout(150);
+}
+
+// Fills the dialog's text field and confirms. Pass '' to submit an empty value, which only the
+// game-naming dialog accepts.
+async function fillDialog(page, value) {
+  await expectDialog(page, 'text entry');
+  await page.fill('#modalInput', value);
+  await page.click('#modalConfirm');
+  await page.waitForSelector('#modal[open]', { state: 'detached', timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(150);
+}
+
+// Schedules a game: opens the season screen's button, names it through the dialog, and waits for
+// the tracker. Six suites did this by hand.
+async function scheduleGame(page, name) {
+  await page.click('#scheduleGameBtn');
+  await fillDialog(page, name);
+  await page.waitForTimeout(300);
+}
+
+module.exports = {
+  provisionFamily, pruneTestFamilies, addProfile, APP_URL,
+  confirmDialog, dismissDialog, fillDialog, scheduleGame,
+};

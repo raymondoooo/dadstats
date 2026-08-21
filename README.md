@@ -40,7 +40,7 @@ stays awake while open).
 | A schedule, imported | Sports that measure instead of counting |
 |---|---|
 | <img src="docs/screenshots/schedule-import.png" alt="Soccer season after importing a calendar feed: a status line reading schedule synced with 5 added, and five games marked SCHEDULED with dates and times from the feed." width="330"> | <img src="docs/screenshots/swimming.png" alt="A swim meet: three typed results — 50 Back 38.22, 100 Free 1:09.80, 50 Free 31.44 — with a dropdown of events and a free-text time field." width="330"> |
-| Paste a TeamSnap or league `.ics` URL and the season fills itself in. Re-syncing updates a rescheduled game instead of duplicating it. | Swimming, track, golf and bowling record a typed result per event rather than tap-counters, and track personal bests. |
+| Paste a TeamSnap or league `.ics` URL, or import a downloaded `.ics` file. Re-syncing updates a rescheduled game instead of duplicating it. | Swimming, track, golf and bowling record a typed result per event rather than tap-counters, and track personal bests. |
 
 ---
 
@@ -172,9 +172,18 @@ Two more rules keep the averages honest:
 
 ### Importing a schedule
 
-Staging a season by hand is fine for a dozen games; a league's TeamSnap or website calendar feed
-is usually faster. On the season screen, **+ Import from calendar feed** takes an `.ics` URL and
-turns each event into a game — its name from the event title, its date/time from `DTSTART`.
+Staging a season by hand is fine for a dozen games; a league's TeamSnap or website calendar is
+usually faster. The season screen's **Import** button takes either an `.ics` **URL** or a
+downloaded `.ics` **file**, and turns each event into a game — its name from the event title, its
+date/time from `DTSTART`.
+
+**Prefer the URL when the league offers one.** A URL is a subscription: press Sync whenever you
+like and a rescheduled game updates in place. A file is a one-time snapshot, so there is no Sync
+button afterwards and you re-import when the schedule changes. Some leagues only ever hand out a
+file, which is why both exist.
+
+A file is read entirely in the browser and never uploaded — it is already on your device, so the
+proxy below (and its whole SSRF surface) has nothing to do with that path.
 
 What it does and doesn't do:
 
@@ -553,8 +562,12 @@ survives a merge with a device that still has it.
   responding to taps, with nothing visibly wrong on screen. `test/merge-growth-check.js` now
   guards the "state must not grow on its own" half; debouncing the PUT and patching the DOM in
   place is the fix for the rest, if it's ever needed.
-- **`prompt()` / `confirm()`** are used for naming and destructive confirmations. They work, but
-  they're the least polished surface in the app.
+- **Every dialog is one shared `<dialog>` element**, reconfigured per call by `askText`,
+  `askConfirm` and `showAlert`. Because they resolve a promise rather than blocking, the page
+  keeps running underneath — so a handler that mutates state re-resolves what it's touching by id
+  after the dialog closes, rather than trusting a reference captured before it opened. That
+  matters here specifically: a background resync can replace a game, a roster or a whole profile
+  mid-decision. Any new dialog call site needs the same treatment.
 - **Profiles merge by name**, so renaming the same kid differently on two offline devices yields
   two profiles rather than a conflict. Deliberate: nothing is ever silently lost, and merging two
   visible profiles by hand is easy.

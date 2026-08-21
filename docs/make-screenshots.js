@@ -38,8 +38,17 @@ const vevent = (uid, summary, dtstart) =>
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch({ args: ['--no-sandbox'] });
   const page = await browser.newPage({ viewport: PHONE, deviceScaleFactor: 2 });
-  const dialogs = [];
-  page.on('dialog', (d) => d.accept(dialogs.length ? dialogs.shift() : ''));
+  // The app uses its own in-page <dialog> rather than prompt()/confirm(), so naming things means
+  // filling #modalInput and confirming. Armed anyway so a stray native dialog is visible.
+  page.on('dialog', (d) => { console.error('unexpected native dialog: ' + d.message()); d.dismiss(); });
+
+  async function fillDialog(value) {
+    await page.waitForSelector('#modal[open]', { state: 'attached', timeout: 5000 });
+    await page.fill('#modalInput', value);
+    await page.click('#modalConfirm');
+    await page.waitForSelector('#modal[open]', { state: 'detached', timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+  }
   page.on('pageerror', (e) => { console.error('PAGE ERROR:', e.message); process.exitCode = 1; });
 
   // A canned feed, so the schedule-import shot shows a real import rather than a mock-up.
@@ -93,14 +102,14 @@ const vevent = (uid, summary, dtstart) =>
   }
 
   await addKid('Jordan', 'basketball');
-  dialogs.push('Winter 2026');
   await page.click('[data-renameseason]');
+  await fillDialog('Winter 2026');
   await page.waitForTimeout(500);
   await home();
 
   await addKid('Riley', 'swimming');
-  dialogs.push('Summer Club');
   await page.click('[data-renameseason]');
+  await fillDialog('Summer Club');
   await page.waitForTimeout(500);
   await home();
 
@@ -153,8 +162,8 @@ const vevent = (uid, summary, dtstart) =>
   }
 
   async function playGame(name, date, lines, team, opp, result) {
-    dialogs.push(name);
     await page.click('#scheduleGameBtn');
+    await fillDialog(name);
     await page.waitForSelector('[data-make][data-key="made2"]', { timeout: 10000 });
     await addRoster();
     await setDate(date);
@@ -188,8 +197,8 @@ const vevent = (uid, summary, dtstart) =>
   ], 45, 38, 'W');
 
   // A live game, so the list shows an IN PROGRESS chip next to finished ones.
-  dialogs.push('vs Southgate');
   await page.click('#scheduleGameBtn');
+  await fillDialog('vs Southgate');
   await page.waitForSelector('[data-make][data-key="made2"]', { timeout: 10000 });
   await addRoster();
   await setDate('2026-01-30T18:30');
@@ -237,8 +246,8 @@ const vevent = (uid, summary, dtstart) =>
   const soccerRow = await page.locator('[data-openseason]', { hasText: 'Spring 2026' }).first();
   await soccerRow.click();
   await page.waitForSelector('#scheduleGameBtn', { timeout: 10000 });
-  dialogs.push('vs Riverside');
   await page.click('#scheduleGameBtn');
+  await fillDialog('vs Riverside');
   await page.waitForSelector('[data-make][data-key="goals"]', { timeout: 10000 });
   await addRoster();
   await setDate('2026-04-11T10:00');
@@ -276,8 +285,8 @@ const vevent = (uid, summary, dtstart) =>
   await page.waitForSelector('[data-openseason]', { timeout: 10000 });
   await page.click('[data-openseason]');
   await page.waitForSelector('#scheduleGameBtn', { timeout: 10000 });
-  dialogs.push('County Meet');
   await page.click('#scheduleGameBtn');
+  await fillDialog('County Meet');
   await page.waitForSelector('.result-add', { timeout: 10000 });
   async function addResult(event, value) {
     await page.selectOption('.result-add select', { label: event });
