@@ -1,6 +1,6 @@
 # Tests
 
-Twelve browser checks plus five non-browser suites. Most drive a **running instance** over HTTP —
+Thirteen browser checks plus five non-browser suites. Most drive a **running instance** over HTTP —
 there is almost no unit test layer, because nearly all the logic lives in one browser-side file.
 The two exceptions earn it: `ical-guard-check.js` tests a server-side function that can't be
 exercised safely against a live instance, and `merge-growth-check.js` asserts on the shape of the
@@ -38,6 +38,7 @@ node test/tombstone-check.js
 node test/ical-check.js
 node test/ical-file-check.js
 node test/dialog-check.js
+node test/tie-check.js
 ```
 
 `setup-check.js` and `empty-state-check.js` are the exceptions: both assert on what a **virgin**
@@ -214,6 +215,23 @@ it's parsed in the browser), that no Sync button is offered afterwards, and that
 non-calendar file says so rather than reporting the more confusing "no events found".
 
 Run it after touching `applyIcsText`, `importIcsFile`, or the import form.
+
+**`tie-check.js`** — recording a drawn game, and keeping the option away from sports that can't
+draw. Soccer, hockey, field hockey, lacrosse and youth baseball end level regularly; until ties
+existed a draw had to be recorded as a lie or left unfinalized, and an unfinalized game is
+excluded from Season Averages entirely.
+
+The gating is the half most likely to rot. `allowsTie` sits in the `SPORTS` config next to
+`usesClock`, and it would be easy for a later edit to show Tie everywhere (wrong for basketball,
+which goes to overtime) or nowhere (the bug it fixes). Asserts both directions, plus that a draw
+stores `result: 'T'`, shows a `T` chip, counts in the season record as `0–0–1`, and still counts
+as a game played.
+
+Validated by forcing the button visible for every sport: it reports `basketball offered a Tie
+button`.
+
+Run it after touching `allowsTie`, `finalizeGame`, `seasonRecord`, `recordHtml`, or
+`gameStatusInfo`.
 
 **`dialog-check.js`** — the shared in-page dialog's *dismiss* paths. Every other suite only ever
 confirms, which means they would all still pass if Cancel silently did nothing, if Escape left the

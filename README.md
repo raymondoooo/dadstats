@@ -153,13 +153,22 @@ Games are created ahead of time and filled in later, so you can stage a whole se
 in one sitting:
 
 ```
-Scheduled  ──(any stat logged)──▶  In Progress  ──(Win / Loss)──▶  Final (W or L)
-    ▲                                                                   │
-    └───────────────────── reopen and edit freely ──────────────────────┘
+Scheduled  ──(any stat logged)──▶  In Progress  ──(Win / Tie / Loss)──▶  Final (W, T or L)
+    ▲                                                                          │
+    └────────────────────── reopen and edit freely ────────────────────────────┘
 ```
 
 Nothing locks. A finalized game reopens for full editing and can be re-finalized or flipped
-W↔L. **Season Averages only count finalized games**, so a game in progress never skews them.
+between results. **Season Averages only count finalized games**, so a game in progress never
+skews them.
+
+**Ties are per sport.** Soccer, hockey, field hockey, lacrosse and baseball/softball can end
+level, so those offer a Tie alongside Win and Loss; basketball goes to overtime and a volleyball
+set has to be won, so those don't — offering it there would be offering a wrong answer. The flag
+is `allowsTie` in the `SPORTS` config, next to `usesClock`.
+
+A season's record shows the draws only once there are any (`3–1–2`), so a basketball season still
+reads `3–1` rather than carrying a permanent `–0` for an outcome it can't produce.
 
 Two more rules keep the averages honest:
 
@@ -258,7 +267,7 @@ state
         ├── icsUrl, icsLastSyncedAt, icsSeenUids[]   calendar feed import (see below)
         └── games[]
             ├── name, createdAt (the game's date/time — editable), updatedAt
-            ├── finalized, result ('W' | 'L' | null)
+            ├── finalized, result ('W' | 'L' | 'T' | null)
             ├── teamScore, oppScore, clockRunning
             ├── icsUid?          set only on a game created by a feed import
             └── players[]
@@ -345,7 +354,7 @@ to be non-destructive at every level:
 |---|---|
 | Profiles | Unioned by case-insensitive name. |
 | Seasons | Unioned by id. |
-| Games | Missing on either side → added. Present on both → whole-game fields (name, date, score, W/L) from the newer `updatedAt`. |
+| Games | Missing on either side → added. Present on both → whole-game fields (name, date, score, result) from the newer `updatedAt`. |
 | Players | Merged individually by id, **not** taken wholesale from the winning game. |
 | Player fields | Name / on-court / minutes: last-writer-wins per player via `metaUpdatedAt`. |
 | Stat log | Unioned by entry id; `removed` always wins over not-removed. |

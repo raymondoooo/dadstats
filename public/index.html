@@ -358,6 +358,7 @@
   }
   .record-chip b { color: var(--make); font-weight: 700; }
   .record-chip i { color: var(--miss); font-style: normal; font-weight: 700; }
+  .record-chip u { color: var(--neutral-chip); text-decoration: none; font-weight: 700; }
 
   .list-row {
     border: 1px solid var(--border);
@@ -390,6 +391,7 @@
   }
   .status-chip.win { background: var(--make-bg); color: var(--make); }
   .status-chip.loss { background: var(--miss-bg); color: var(--miss); }
+  .status-chip.tie { background: rgba(91, 100, 114, 0.16); color: var(--neutral-chip); }
   .status-chip.neutral { background: var(--border); color: var(--ink-muted); }
   .status-chip.scheduled { background: var(--border); color: var(--ink-muted); }
   .status-chip.progress { background: rgba(232, 89, 12, 0.14); color: var(--accent); }
@@ -516,6 +518,12 @@
   .toolbar-btn.result-btn.win.active { background: var(--make); color: #fff; z-index: 1; }
   .toolbar-btn.result-btn.loss { border-color: var(--miss); color: var(--miss); }
   .toolbar-btn.result-btn.loss.active { background: var(--miss); color: #fff; z-index: 1; }
+  /* Deliberately neither green nor red: a draw is its own outcome, not a soft win or a soft loss. */
+  .toolbar-btn.result-btn.tie { border-color: var(--neutral-chip); color: var(--neutral-chip); }
+  .toolbar-btn.result-btn.tie.active { background: var(--neutral-chip); color: #fff; z-index: 1; }
+  /* The toggle's rounded ends are set by :first-child/:last-child, so a hidden Tie in the middle
+     leaves Win and Loss correct on their own. */
+  .result-toggle .result-btn[hidden] { display: none; }
 
   .clock-btn { display: flex; align-items: center; gap: 6px; }
   .clock-btn::before {
@@ -914,8 +922,12 @@
     <div class="toolbar">
       <input class="toolbar-input" id="gameNameInput" placeholder="Name this game (e.g. vs Eagles)" aria-label="Game name" />
       <input class="toolbar-input toolbar-date" type="datetime-local" id="gameDateInput" aria-label="Game date and time" />
+      <!-- Tie sits between Win and Loss so the three read in outcome order rather than having the
+           draw tacked on the end. Hidden entirely for sports that can't end level — see
+           allowsTie in SPORTS. -->
       <div class="result-toggle" id="resultToggle">
         <button class="toolbar-btn result-btn win" id="markWinBtn">Win</button>
+        <button class="toolbar-btn result-btn tie" id="markTieBtn">Tie</button>
         <button class="toolbar-btn result-btn loss" id="markLossBtn">Loss</button>
       </div>
     </div>
@@ -1176,6 +1188,7 @@
       label: 'Soccer',
       icon: '⚽',
       usesClock: true,
+      allowsTie: true,
       tallyStats: [
         { key: 'ast', label: 'A', tone: 'make' },
         { key: 'sv', label: 'SV', tone: 'make' },
@@ -1202,6 +1215,7 @@
       label: 'Hockey',
       icon: '🏒',
       usesClock: true,
+      allowsTie: true,
       tallyStats: [
         { key: 'ast', label: 'A', tone: 'make' },
         { key: 'sv', label: 'SV', tone: 'make' },
@@ -1229,6 +1243,7 @@
       label: 'Field Hockey',
       icon: '🏑',
       usesClock: true,
+      allowsTie: true,
       tallyStats: [
         { key: 'ast', label: 'A', tone: 'make' },
         { key: 'sv', label: 'SV', tone: 'make' },
@@ -1255,6 +1270,7 @@
       label: 'Lacrosse',
       icon: '🥍',
       usesClock: true,
+      allowsTie: true,
       tallyStats: [
         { key: 'ast', label: 'A', tone: 'make' },
         { key: 'gb', label: 'GB', tone: 'make' },
@@ -1309,6 +1325,7 @@
       label: 'Baseball / Softball',
       icon: '⚾',
       usesClock: false,
+      allowsTie: true,
       // Hit types are separate tallies rather than one hit/out shot pair, so a home run is a
       // single tap instead of "Hit" followed by "HR" — double-entry would inflate the hit count.
       // Batting only; pitching is a genuinely different stat sheet.
@@ -1853,7 +1870,12 @@
             g.players = [seeded];
           }
           if (typeof g.finalized !== 'boolean') g.finalized = true;
-          if (g.result !== 'W' && g.result !== 'L') g.result = null;
+          // 'T' joined W/L when soccer ties needed recording. Note the cross-version consequence:
+          // a client older than that treats 'T' as unrecognised and nulls it here, so a tie
+          // syncing to a stale device degrades to a plain "Final" and can propagate back as one.
+          // Unavoidable when extending an enum — worth knowing if two phones are on different
+          // versions mid-season.
+          if (g.result !== 'W' && g.result !== 'L' && g.result !== 'T') g.result = null;
           if (!g.createdAt) g.createdAt = new Date().toISOString();
           if (resetClocks) {
             activePlayers(g).forEach(function (p) { if (p.onCourt) p.subInAt = now(); });
@@ -2472,6 +2494,7 @@
     if (g.finalized) {
       if (g.result === 'W') return { label: 'W', cls: 'win' };
       if (g.result === 'L') return { label: 'L', cls: 'loss' };
+      if (g.result === 'T') return { label: 'T', cls: 'tie' };
       return { label: 'Final', cls: 'neutral' };
     }
     return gameHasStats(g) ? { label: 'In Progress', cls: 'progress' } : { label: 'Scheduled', cls: 'scheduled' };
@@ -2529,25 +2552,30 @@
   // W/L was captured per game but never totalled anywhere — the first thing anyone asks about a
   // season is the record, so it now shows on the season header, the season list, and each tile.
   function seasonRecord(season) {
-    var w = 0, l = 0;
+    var w = 0, l = 0, t = 0;
     season.games.forEach(function (g) {
       if (!g.finalized) return;
       if (g.result === 'W') w++;
       else if (g.result === 'L') l++;
+      else if (g.result === 'T') t++;
     });
-    return { w: w, l: l };
+    return { w: w, l: l, t: t };
   }
   function profileRecord(pr) {
-    var w = 0, l = 0;
+    var w = 0, l = 0, t = 0;
     activeSeasons(pr).forEach(function (s) {
       var r = seasonRecord(s);
-      w += r.w; l += r.l;
+      w += r.w; l += r.l; t += r.t;
     });
-    return { w: w, l: l };
+    return { w: w, l: l, t: t };
   }
+  // The draw only appears once there is one, so a basketball season still reads "2–1" rather than
+  // carrying a permanent "–0" for an outcome that sport can't produce.
   function recordHtml(rec) {
-    if (rec.w + rec.l === 0) return '';
-    return '<span class="record-chip"><b>' + rec.w + '</b>&ndash;<i>' + rec.l + '</i></span>';
+    var ties = rec.t || 0;
+    if (rec.w + rec.l + ties === 0) return '';
+    return '<span class="record-chip"><b>' + rec.w + '</b>&ndash;<i>' + rec.l + '</i>' +
+      (ties ? '&ndash;<u>' + ties + '</u>' : '') + '</span>';
   }
 
   function formatTime(ms) {
@@ -3346,6 +3374,14 @@
 
     document.getElementById('markWinBtn').classList.toggle('active', g.finalized && g.result === 'W');
     document.getElementById('markLossBtn').classList.toggle('active', g.finalized && g.result === 'L');
+    // Shown only for sports that can end level. A basketball game goes to overtime and a
+    // volleyball set has to be won, so offering Tie there would be offering a wrong answer.
+    // Kept visible regardless if this game is *already* a tie — a season whose sport flag changed,
+    // or a game imported from a device that allowed it, must still be readable and correctable
+    // rather than showing a result with no matching control.
+    var tieBtn = document.getElementById('markTieBtn');
+    tieBtn.hidden = !sportConfig(activeSport()).allowsTie && g.result !== 'T';
+    tieBtn.classList.toggle('active', g.finalized && g.result === 'T');
 
     // The game clock only exists for sports that track floor time; volleyball and baseball have
     // no equivalent, so the control is hidden rather than shown doing nothing.
@@ -3910,6 +3946,7 @@
     render();
   }
   document.getElementById('markWinBtn').addEventListener('click', function () { finalizeGame('W'); });
+  document.getElementById('markTieBtn').addEventListener('click', function () { finalizeGame('T'); });
   document.getElementById('markLossBtn').addEventListener('click', function () { finalizeGame('L'); });
 
   // Game-wide clock pause for stoppages (timeouts, dead balls, quarter breaks) — freezes every

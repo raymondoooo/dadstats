@@ -86,6 +86,7 @@ jobs:
           node test/ical-check.js
           node test/ical-file-check.js
           node test/dialog-check.js
+          node test/tie-check.js
 
       # First-run setup only exists on an instance with no families, so it needs its own
       # untouched container rather than the one the tests above have been creating families in.
