@@ -136,6 +136,34 @@ const check = (label, ok, detail) => {
   const noUrl = await req('GET', '/api/ical-proxy', { cookie });
   check('ical-proxy requires a url param', noUrl.status === 400, 'status ' + noUrl.status);
 
+  console.log('== request bodies ==');
+
+  // The 8mb ceiling the state route needs used to apply to every route, including the two that
+  // need no account — so an anonymous caller could make the app buffer 8mb per request before it
+  // checked a password. Only the state write gets the big parser now, and only behind requireAuth.
+  const megabyte = 'x'.repeat(1024 * 1024);
+  const fatLogin = await req('POST', '/api/login', { body: { password: megabyte } });
+  check('a 1MB body to /api/login is refused', fatLogin.status === 413, 'status ' + fatLogin.status);
+
+  const fatSetup = await req('POST', '/api/setup', { body: { name: 'x', password: megabyte } });
+  check('a 1MB body to /api/setup is refused', fatSetup.status === 413, 'status ' + fatSetup.status);
+
+  const fatAnon = await req('PUT', '/api/state', { body: { state: { filler: megabyte }, version: 0 } });
+  check('a 1MB state write with no session is refused as unauthenticated',
+    fatAnon.status === 401, 'status ' + fatAnon.status);
+
+  // The other half of the same change: the route that legitimately sends megabytes must still
+  // take them. A family with a few seasons of games really does PUT more than 64kb.
+  const bigState = {
+    state: { profiles: [], activeProfileId: null, note: 'x'.repeat(300 * 1024) },
+    version: 0,
+  };
+  const session = await req('POST', '/api/login', { body: { password: famPassword } });
+  const liveCookie = (session.setCookie || '').split(';')[0];
+  const bigWrite = await req('PUT', '/api/state', { body: bigState, cookie: liveCookie });
+  check('a 300kb state write from a signed-in family still succeeds',
+    bigWrite.status === 200, 'status ' + bigWrite.status);
+
   console.log('== rate limiting ==');
 
   // Regression: the limiter counts *failures*, and a handler that never recorded one meant the

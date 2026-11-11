@@ -64,10 +64,24 @@ if (TRUST_PROXY) {
       : (Number.isInteger(hops) && hops >= 0 ? hops : TRUST_PROXY)
   );
 }
-// The client PUTs its entire state on every save, so this ceiling grows with a family's whole
+// Two body limits, because exactly one route needs a big one.
+//
+// The client PUTs its entire state on every save, so that ceiling grows with a family's whole
 // history (all profiles/seasons/games/logs), not with a single game. At 2mb a few seasons in,
 // every save would start failing with a 413 that the client surfaces as nothing at all.
-app.use(express.json({ limit: '8mb' }));
+//
+// Everything else — login, setup, a family rename — is a handful of fields, and two of those
+// routes are reachable with no account at all. Applying the 8mb ceiling globally meant anyone on
+// the internet could make the app read and buffer 8mb per request before it so much as checked a
+// password. 64kb is orders of magnitude more than any of them send.
+const smallBody = express.json({ limit: '64kb' });
+const stateBody = express.json({ limit: '8mb' });
+
+// The big parser is attached to the state route itself, below, *after* requireAuth — so an
+// unauthenticated request is turned away before anything buffers it. That only holds if the
+// small parser doesn't get there first, hence the skip.
+const isStateWrite = (req) => req.method === 'PUT' && req.path === '/api/state';
+app.use((req, res, next) => (isStateWrite(req) ? next() : smallBody(req, res, next)));
 app.use(cookieParser());
 // Absolute so the app doesn't depend on the working directory it was started from.
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -181,7 +195,7 @@ app.get('/api/state', requireAuth, (req, res) => {
   });
 });
 
-app.put('/api/state', requireAuth, (req, res) => {
+app.put('/api/state', requireAuth, stateBody, (req, res) => {
   const { state, version, clientId } = req.body || {};
   if (!state || typeof state !== 'object') {
     return res.status(400).json({ error: 'state (object) is required' });
@@ -241,6 +255,15 @@ app.put('/api/state', requireAuth, (req, res) => {
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
 
 app.use((err, req, res, next) => {
+  // A body that overran its limit, or wasn't JSON, is the caller's problem. Reporting those as
+  // 500 would both mislabel them and bury the real cause: body-parser already knows exactly what
+  // went wrong, and a client that gets a 500 has no reason to think trimming its request helps.
+  if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+    return res.status(413).json({ error: 'request body too large' });
+  }
+  if (err && (err.type === 'entity.parse.failed' || err.type === 'encoding.unsupported')) {
+    return res.status(400).json({ error: 'invalid request body' });
+  }
   console.error(err);
   res.status(500).json({ error: 'something went wrong' });
 });
