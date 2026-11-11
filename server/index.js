@@ -1,4 +1,7 @@
-require('dotenv').config();
+// Reads a .env file beside the app if there is one. Node does this itself now, which is why
+// there's no dotenv here: it was one dependency, with its own release treadmill, for one line.
+// Throws when the file simply doesn't exist — the normal case for a container run with -e flags.
+try { process.loadEnvFile(); } catch { /* no .env file; env vars are the other way in */ }
 const path = require('path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
