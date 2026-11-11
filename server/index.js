@@ -68,6 +68,7 @@ if (TRUST_PROXY) {
       : (Number.isInteger(hops) && hops >= 0 ? hops : TRUST_PROXY)
   );
 }
+
 // Response headers. The app answered with `X-Powered-By: Express` and nothing else, which is
 // the wrong way round: it advertised the stack and declined to say anything a browser could use
 // to contain a mistake.
