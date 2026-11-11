@@ -7,6 +7,8 @@
 // genuinely stored them.
 //
 // Run it as three phases against the same browser profile:
+// Every name in here is invented: this repo is public, so no fixture carries a real family's.
+//
 //   APP_URL=... node test/account-check.js seed        # instance A, create a profile
 //   (destroy A, start B on the same port)
 //   APP_URL=... node test/account-check.js after-setup # instance B, set up fresh
@@ -41,9 +43,9 @@ async function run(label, fn) {
       await page.fill('#setupPassword', 'real-family-password');
       await page.click('#setupSubmit');
       await page.waitForSelector('#addProfileBtn', { state: 'visible', timeout: 25000 });
-      await addProfile(page, 'Hayden');       // stand-in for a real kid's name
+      await addProfile(page, 'Jordan');       // an invented name — see the note at the top
       await page.waitForTimeout(1500);
-      console.log('  seeded a profile named Hayden');
+      console.log('  seeded a profile named Jordan');
     });
     return;
   }
@@ -60,7 +62,7 @@ async function run(label, fn) {
       });
       console.log('  setup screen shown:      ', setupVisible);
       console.log('  localStorage profiles:   ', ls);
-      console.log('  "Hayden" visible on page:', body.includes('Hayden'));
+      console.log('  "Jordan" visible on page:', body.includes('Jordan'));
     });
     return;
   }
@@ -77,7 +79,7 @@ async function run(label, fn) {
       const profiles = await page.$$eval('[data-openprofile]', (e) => e.map((x) => x.textContent.trim().split('\n')[0]));
       console.log('  after completing setup on the NEW instance:');
       console.log('    profiles shown:  ', JSON.stringify(profiles));
-      console.log('    "Hayden" on page:', body.includes('Hayden'));
+      console.log('    "Jordan" on page:', body.includes('Jordan'));
     });
     return;
   }

@@ -66,6 +66,9 @@ node test/merge-growth-check.js
 # image + runtime invariants (manages its own containers, needs no browser)
 IMAGE=dadstats ./test/image-check.sh
 
+# proxy hop counting (manages its own containers, needs no browser)
+IMAGE=dadstats ./test/run-proxy-check.sh
+
 # security regressions — run LAST, see below
 APP_URL=http://localhost:3208 ADMIN_PASSWORD=test-admin-pw node test/security-check.js
 ```
@@ -159,9 +162,29 @@ missing host path as root and the unprivileged app died with `SQLITE_CANTOPEN`.
 
 Run it after touching the Dockerfile or `docker-entrypoint.sh`.
 
+**`run-proxy-check.sh`** (drives `proxy-check.js`) — that `TRUST_PROXY` counts hops instead of
+believing a header. It starts one instance per value (1 and 2) because the setting is read at
+boot and nothing the API returns reveals which address the app decided on; the only way to see it
+is to burn the login limiter with one forged `X-Forwarded-For` and check which *other* headers
+land in the same bucket. A client prepending an address must not escape its own bucket — that
+bypass is what `trust proxy = true` used to allow. It also covers the half of the cookie rule
+that needs a trusted proxy: `X-Forwarded-Proto: https` marks the session cookie `Secure`, and a
+plain request doesn't.
+
+```bash
+IMAGE=dadstats ./test/run-proxy-check.sh
+```
+
+Run it after touching the `TRUST_PROXY` parsing in `server/index.js`, `cookieOptions` in
+`server/auth.js`, or `server/ratelimit.js`.
+
 **`security-check.js`** — one case per security bug ever found here, plus the boundaries in
-`SECURITY.md`: the session cookie's `Secure` flag tracks `SECURE_COOKIES` (it was once derived
-from `NODE_ENV`, which silently broke login over plain HTTP), a wrong password is rejected, an
+`SECURITY.md`: the response headers (no `X-Powered-By`, a CSP that keeps the page on its own
+origin, `nosniff`, and **no** `upgrade-insecure-requests`, which would break every plain-HTTP
+install), that a body over the limit is refused on the routes that need no account while the
+state write still takes megabytes, the session cookie is not `Secure` over plain HTTP unless `SECURE_COOKIES` forces
+it (the flag was once derived from `NODE_ENV`, which silently broke login over plain HTTP) and a
+client-supplied `X-Forwarded-Proto` is ignored while no proxy is trusted, a wrong password is rejected, an
 unknown password does not create an account, `/api/setup` stays closed once configured, a family
 session can't reach the admin API, logout invalidates the session, and the rate limiter still
 trips when `X-Forwarded-For` is rotated. Also that `/api/ical-proxy` requires a session and

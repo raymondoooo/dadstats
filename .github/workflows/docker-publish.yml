@@ -136,6 +136,14 @@ jobs:
           BIND_DIR: /tmp/dadstats-bindcheck
         run: ./test/image-check.sh
 
+      # Manages its own containers too: TRUST_PROXY is read at boot, so proving it counts hops
+      # rather than trusting the header means configuring an instance per value.
+      - name: Proxy hop counting (TRUST_PROXY)
+        env:
+          IMAGE: dadstats:ci
+          PORT: '3281'
+        run: ./test/run-proxy-check.sh
+
       # Manages its own pair of containers on one port, so it can't share with the suites above.
       - name: Account binding (cache must not cross accounts)
         env:

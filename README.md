@@ -468,8 +468,9 @@ Notes on the details:
   can't be looked up by equality. Fine for a household; it does mean creating a family gets
   slower as you add them, since each new password is checked against every existing one.
 - Failed logins are rate limited to 10 per IP per 15 minutes, on both the family and admin
-  endpoints. **Behind a reverse proxy, set `TRUST_PROXY=1`** or every request looks like it came
-  from the proxy and one person's typo locks out everyone.
+  endpoints. **Behind a reverse proxy, set `TRUST_PROXY` to the number of proxies** (`1` for one,
+  `2` for a CDN in front of one) or every request looks like it came from the proxy and one
+  person's typo locks out everyone.
 
 ---
 
@@ -490,19 +491,56 @@ Every setting is optional — the command above works as-is.
 | `SQLITE_PATH` | `/app/data/dadstats.db` | DB file. Keep it inside your mounted volume or data won't survive a restart. |
 | `ADMIN_PASSWORD` | auto-generated | Gate for `/admin`. If unset, generated on first boot, printed to the logs, and saved to `<data dir>/.admin_password`. |
 | `JWT_SECRET` | auto-generated | Generated on first boot and persisted to `<data dir>/.jwt_secret`, so sessions survive restarts with zero config. |
-| `SECURE_COOKIES` | off | Set to `1` **only if browsers reach the app over HTTPS** (directly or via a TLS-terminating proxy). It marks the session cookie `Secure`, which browsers refuse to send back over plain HTTP — turning it on for an `http://` install locks you out of login with no visible error. |
-| `TRUST_PROXY` | off | Set to `1` behind a reverse proxy so the login rate limit sees real client IPs instead of the proxy's. |
+| `SECURE_COOKIES` | off | Usually leave it off: the session cookie is marked `Secure` automatically on any request that arrived over HTTPS. Set to `1` to force the flag on every response — **only if every way in is HTTPS**, since browsers refuse to send a `Secure` cookie back over plain HTTP and login then fails with nothing to explain it. |
+| `TRUST_PROXY` | off | **A hop count**, not a flag: how many proxies sit in front of the app, so the login rate limit sees real client addresses instead of the proxy's. `1` = one reverse proxy; `2` = a CDN in front of one; `true` = the whole `X-Forwarded-For` chain (only if you control every hop). |
 | `TZ` | container default | Timezone for server-side timestamps. |
 
 ### Putting it on the internet
 
 Anything past your own LAN should sit behind a reverse proxy that terminates TLS (Caddy, nginx,
-Traefik), with `SECURE_COOKIES=1` and `TRUST_PROXY=1` set. Family passwords are the only gate on
-a season's worth of kids' names and schedules — don't serve them over plain HTTP across the
-open internet.
+Traefik). Family passwords are the only gate on a season's worth of kids' names and schedules —
+don't serve them over plain HTTP across the open internet.
+
+One setting matters there: **`TRUST_PROXY`, and it is a count of proxies, not an on/off flag.**
+
+| In front of the app | Set |
+|---|---|
+| Nothing (LAN, direct) | leave unset |
+| One reverse proxy — nginx, Caddy, Nginx Proxy Manager, Traefik | `TRUST_PROXY=1` |
+| A CDN in front of your own proxy — e.g. Cloudflare → nginx | `TRUST_PROXY=2` |
+| Proxies at known addresses | `TRUST_PROXY=10.0.0.0/8` |
+
+The count is how many entries on the right-hand end of `X-Forwarded-For` your own proxies wrote.
+`TRUST_PROXY=true` trusts the entire header instead, and the left-most entry of that header is
+whatever the visitor chose to send — so it lets a client invent a new client address per request
+and walk straight through the rate limit it was meant to enforce. Use `true` only if you control
+every hop. Unset is safe but blunt: everyone shares one bucket, so one person's typo can lock out
+the household until the window passes.
+
+Count the hops wrong and the limit still works, it just groups people — too low and you're
+counting the proxy, too high and you're counting a header the client controls. If you're unsure,
+look at one request's `X-Forwarded-For` in your proxy's access log and count the addresses it
+added.
+
+A hop count assumes traffic *arrives* through those proxies. If the container's port is also
+reachable directly (a LAN address, a published port on a shared host), someone can connect to it
+and forge the header. Publish the port to the proxy only, or leave `TRUST_PROXY` unset.
+
+Session cookies take care of themselves once that's set: each response marks the cookie `Secure`
+if that request came in over HTTPS, so the same container serves `https://stats.example.com` and
+`http://192.168.x.x:3211` without either one breaking. `SECURE_COOKIES=1` forces the flag on
+everywhere, which is right only when there is no plain-HTTP way in at all.
 
 `schema.sql` is applied on boot and is idempotent, so it converges both a fresh volume and an
 in-place upgrade without a separate migration step.
+
+Responses carry the usual browser-side headers (via [helmet](https://helmetjs.github.io/)),
+including a Content-Security-Policy that keeps the page to its own origin — an injected script
+tag or an exfiltrating `fetch()` has nowhere to point. The policy still has to allow
+`'unsafe-inline'` for scripts and styles, because the whole client is one HTML file with both
+inline; that's deliberate, and it's the one thing a stricter policy would need changed.
+`Strict-Transport-Security` is sent only on responses to requests that actually arrived over
+HTTPS, so a plain-HTTP LAN install never gets pinned to a protocol it doesn't serve.
 
 `GET /api/health` reports DB connectivity, and the image ships a Docker `HEALTHCHECK` that uses it.
 

@@ -24,21 +24,30 @@ const ADMIN_JWT_EXPIRY = '12h';
 // defaulting it on (as a production build otherwise would) silently breaks login for anyone
 // self-hosting over plain HTTP on their LAN — they'd sign in, get a cookie the browser refuses
 // to return, and bounce straight back to the login form with no error to explain it.
-// If you terminate TLS at a reverse proxy, the browser still sees HTTPS, so set this to 1.
+//
+// Setting this to 1 forces the flag on for every response, which is the right answer only when
+// *every* way in is HTTPS. Most installs don't need it at all now: a request that actually
+// arrived over TLS gets a Secure cookie on its own (see cookieOptions), so the common
+// "public HTTPS domain plus a plain-HTTP LAN address" setup works on both without a choice
+// between a flag that breaks one of them and no flag at all.
 const SECURE_COOKIES = /^(1|true|yes)$/i.test(process.env.SECURE_COOKIES || '');
 
-function cookieOptions(maxAgeMs) {
+function cookieOptions(req, maxAgeMs) {
   return {
     httpOnly: true,
     sameSite: 'lax',
-    secure: SECURE_COOKIES,
+    // Per-request rather than per-process: req.secure is true when this request came in over TLS,
+    // or when a TRUSTED proxy said it did via X-Forwarded-Proto. It depends on TRUST_PROXY being
+    // set (see server/index.js) — without that, a proxy's X-Forwarded-Proto is ignored, which is
+    // also what stops a client forging the header to flip the flag on itself.
+    secure: SECURE_COOKIES || req.secure === true,
     maxAge: maxAgeMs,
   };
 }
 
-function issueSession(res, familyId) {
+function issueSession(req, res, familyId) {
   const token = jwt.sign({ sub: familyId }, process.env.JWT_SECRET, { expiresIn: JWT_EXPIRY });
-  res.cookie(COOKIE_NAME, token, cookieOptions(30 * 24 * 60 * 60 * 1000));
+  res.cookie(COOKIE_NAME, token, cookieOptions(req, 30 * 24 * 60 * 60 * 1000));
 }
 
 async function login(req, res) {
@@ -49,7 +58,7 @@ async function login(req, res) {
   for (const fam of families) {
     if (await bcrypt.compare(password, fam.password_hash)) {
       req.clearAuthFailures();
-      issueSession(res, fam.id);
+      issueSession(req, res, fam.id);
       return res.json({ ok: true });
     }
   }
@@ -99,7 +108,7 @@ function adminLogin(req, res) {
   // Shorter-lived than a family session: this one can create and delete accounts, and it's used
   // occasionally from a desktop rather than all game from a phone in a pocket.
   const token = jwt.sign({ admin: true }, process.env.JWT_SECRET, { expiresIn: ADMIN_JWT_EXPIRY });
-  res.cookie(ADMIN_COOKIE_NAME, token, cookieOptions(12 * 60 * 60 * 1000));
+  res.cookie(ADMIN_COOKIE_NAME, token, cookieOptions(req, 12 * 60 * 60 * 1000));
   res.json({ ok: true });
 }
 

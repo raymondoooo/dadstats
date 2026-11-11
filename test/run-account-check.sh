@@ -38,7 +38,7 @@ r.forEach(x=>{const s=JSON.parse(x.state);(s.profiles||[]).forEach(p=>names.push
 console.log(names.join(','));
 ")
 
-if printf '%s' "$stored" | grep -qi "hayden"; then
+if printf '%s' "$stored" | grep -qi "jordan"; then
   echo "  FAIL  the new instance received the previous account's data: $stored"
   exit 1
 fi
