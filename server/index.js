@@ -34,7 +34,36 @@ const app = express();
 
 // Behind a reverse proxy, every request otherwise looks like it came from the proxy's IP, which
 // would turn the per-client login rate limit into a single global one (see ratelimit.js).
-if (/^(1|true|yes)$/i.test(process.env.TRUST_PROXY || '')) app.set('trust proxy', true);
+//
+// The value is a hop COUNT, not a flag, and that distinction is the whole point. `trust proxy =
+// true` trusts the entire X-Forwarded-For chain, and the left-most entry of that chain is
+// whatever the visitor typed into the header — so one forged request buys a fresh rate-limit
+// bucket, and the limiter this setting exists to fix becomes bypassable. A count instead tells
+// Express how many entries on the right were written by proxies you actually run:
+//
+//   TRUST_PROXY=1            one proxy in front of the app (nginx, Caddy, NPM, Traefik)
+//   TRUST_PROXY=2            two hops — e.g. Cloudflare in front of your own reverse proxy
+//   TRUST_PROXY=10.0.0.0/8   trust requests from these addresses as proxies
+//   TRUST_PROXY=true         the whole chain. Only when you control every hop in it.
+//
+// Unset is safe but blunt: every visitor shares one bucket, so one person's typo can lock out
+// the household for the window. Count the hops instead and give each client its own.
+//
+// A hop count is only as good as the assumption that requests arrive *through* those proxies:
+// if the container's port is also reachable directly, a client can connect to it and forge the
+// header itself. Publish the port to the proxy only, or leave this unset.
+const TRUST_PROXY = (process.env.TRUST_PROXY || '').trim();
+if (TRUST_PROXY) {
+  const hops = Number(TRUST_PROXY);
+  // `yes`/`true` keep meaning "the whole chain" because earlier versions of this app documented
+  // TRUST_PROXY as a flag, and an install that still says `yes` must not crash on boot: Express
+  // compiles anything else as a list of proxy addresses and throws on a word it can't parse.
+  app.set(
+    'trust proxy',
+    /^(true|yes)$/i.test(TRUST_PROXY) ? true
+      : (Number.isInteger(hops) && hops >= 0 ? hops : TRUST_PROXY)
+  );
+}
 // The client PUTs its entire state on every save, so this ceiling grows with a family's whole
 // history (all profiles/seasons/games/logs), not with a single game. At 2mb a few seasons in,
 // every save would start failing with a 413 that the client surfaces as nothing at all.

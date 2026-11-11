@@ -9,8 +9,10 @@
 //
 // IMPORTANT: behind a reverse proxy every request appears to come from the proxy's IP, which
 // would make this limit global rather than per-client — one person fat-fingering their password
-// would lock out everybody. Set TRUST_PROXY=1 so Express reads X-Forwarded-For instead
-// (see server/index.js).
+// would lock out everybody. Set TRUST_PROXY to the number of proxies in front of the app (1 for
+// a single reverse proxy, 2 for a CDN in front of one) so Express reads the client address out
+// of X-Forwarded-For instead. A hop count, not a flag: see the comment in server/index.js for
+// why trusting the whole header hands the bypass back to the client.
 
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILURES = 10;

@@ -40,15 +40,34 @@ const check = (label, ok, detail) => {
 
   // Regression: `secure` was once derived from NODE_ENV, so a production image served over plain
   // HTTP handed out a cookie the browser accepted and then refused to send back — an infinite
-  // login loop with no error message. It must stay opt-in via SECURE_COOKIES.
+  // login loop with no error message. Over plain HTTP the flag must stay off unless the operator
+  // forced it on with SECURE_COOKIES.
+  const forced = /^(1|true|yes)$/i.test(process.env.SECURE_COOKIES || '');
   const secureFlagged = /;\s*Secure/i.test(login.setCookie || '');
-  const secureExpected = /^(1|true|yes)$/i.test(process.env.SECURE_COOKIES || '');
   check(
-    `Secure flag matches SECURE_COOKIES (${secureExpected ? 'on' : 'off'})`,
-    secureFlagged === secureExpected,
+    `Secure flag off on plain HTTP${forced ? ' unless forced (it is)' : ''}`,
+    secureFlagged === forced,
     `cookie: ${login.setCookie}`
   );
   check('session cookie is HttpOnly', /HttpOnly/i.test(login.setCookie || ''));
+
+  // The cookie is marked Secure per-request now, from X-Forwarded-Proto — but only when a proxy
+  // is trusted. This instance trusts none, so the header is a client-supplied claim and must be
+  // ignored: believing it would hand out a Secure cookie to a plain-HTTP browser, which is the
+  // silent login loop above by another route. The trusted case is proven in proxy-check.js,
+  // which can configure TRUST_PROXY.
+  const trusted = (process.env.TRUST_PROXY || '').trim() !== '';
+  const spoofedProto = await req('POST', '/api/login', {
+    body: { password: famPassword },
+    headers: { 'X-Forwarded-Proto': 'https' },
+  });
+  const spoofSecure = /;\s*Secure/i.test(spoofedProto.setCookie || '');
+  check(
+    trusted ? 'X-Forwarded-Proto from a trusted proxy marks the cookie Secure'
+            : 'X-Forwarded-Proto is ignored when no proxy is trusted',
+    spoofSecure === (forced || trusted),
+    `cookie: ${spoofedProto.setCookie}`
+  );
 
   console.log('== auth boundaries ==');
 
@@ -120,18 +139,25 @@ const check = (label, ok, detail) => {
   console.log('== rate limiting ==');
 
   // Regression: the limiter counts *failures*, and a handler that never recorded one meant the
-  // limit could never trip. Also the TRUST_PROXY case — a forged X-Forwarded-For must not buy
-  // a fresh bucket while the app is not behind a proxy.
+  // limit could never trip.
+  //
+  // The forged-header half only means something on an instance that trusts no proxy, which is
+  // how this suite is run: there, X-Forwarded-For is just a string a client sent and must not
+  // buy a fresh bucket. Where a hop count IS configured the header legitimately decides the
+  // bucket, so rotating it is supposed to work — proxy-check.js covers that instance instead.
   let sawLimit = false;
   for (let i = 0; i < 14; i++) {
     const r = await req('POST', '/api/login', {
       body: { password: 'brute-force-guess-' + i },
-      headers: { 'X-Forwarded-For': `10.0.0.${i}` },
+      headers: trusted ? {} : { 'X-Forwarded-For': `10.0.0.${i}` },
     });
     if (r.status === 429) { sawLimit = true; break; }
   }
-  check('login rate limit trips despite rotating X-Forwarded-For', sawLimit,
-    'no 429 in 14 attempts with forged client IPs');
+  check(
+    trusted ? 'login rate limit trips' : 'login rate limit trips despite rotating X-Forwarded-For',
+    sawLimit,
+    'no 429 in 14 attempts'
+  );
 
   console.log();
   console.log(fails.length ? `FAIL (${fails.length})` : 'PASS');

@@ -70,7 +70,7 @@ async function completeSetup(req, res) {
     .run(label, hash);
 
   // No duplicate-password check: there is nothing to collide with on an empty instance.
-  issueFamilySession(res, lastInsertRowid);
+  issueFamilySession(req, res, lastInsertRowid);
   res.json({ ok: true });
 }
 
