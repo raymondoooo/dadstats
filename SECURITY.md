@@ -35,8 +35,13 @@ its games; nothing in the admin UI displays them.
 
 **Anyone who can reach the instance can attempt logins.** Failed attempts are rate limited to 10
 per IP per 15 minutes on both the family and admin endpoints. Behind a reverse proxy you must set
-`TRUST_PROXY=1` or every request appears to originate from the proxy and the limit becomes global
-instead of per-client.
+`TRUST_PROXY` or every request appears to originate from the proxy and the limit becomes global
+instead of per-client. It takes a **count of proxy hops** (`1` for one reverse proxy, `2` for a
+CDN in front of one): the count is how much of `X-Forwarded-For` your own proxies wrote, and
+anything further left is a value the client chose. `TRUST_PROXY=true` trusts the whole header,
+which lets a client pick a new address per request and walk through the limit — only use it if
+you control every hop. The limit also assumes requests *arrive* through those proxies; if the
+app's port is reachable directly as well, that path can forge the header.
 
 **Sessions are JWTs and are not revocable.** Changing a family's password stops *new* sign-ins
 with the old one, but a device already signed in stays signed in until its 30-day token expires.
@@ -44,8 +49,13 @@ This is deliberate — you don't want a mid-season password change to log a pare
 game — but it means a password change is not a way to evict a device.
 
 **Transport security is your responsibility.** The app speaks plain HTTP and expects to sit
-behind a reverse proxy if it's exposed beyond a LAN. `SECURE_COOKIES` defaults to **off** because
-turning it on without HTTPS silently breaks login; set it to `1` once TLS is in front.
+behind a reverse proxy if it's exposed beyond a LAN. The session cookie is marked `Secure` on any
+response to a request that arrived over HTTPS (which needs `TRUST_PROXY` set when TLS is
+terminated at a proxy), so an instance on both a public HTTPS address and a plain-HTTP LAN
+address works on both. `SECURE_COOKIES=1` forces the flag on for every response — correct only
+when every way in is HTTPS, since browsers won't send a `Secure` cookie over plain HTTP and
+login then fails with nothing to explain it. `Strict-Transport-Security` follows the same rule:
+sent only over HTTPS, so a plain-HTTP install is never pinned to a protocol it doesn't serve.
 
 **The data volume is unencrypted.** Anyone with filesystem access to it — or to a backup under
 `data/backups/` — can read every family's data and the generated secrets in `.jwt_secret` and
@@ -57,6 +67,12 @@ link-local addresses, and connects to that literal resolved address — closing 
 gap where a second lookup could return something a first check never saw. Redirects are
 re-validated the same way, one hop at a time. See `server/icalProxy.js` and the README's
 "Importing a schedule" section.
+
+**The Content-Security-Policy allows `'unsafe-inline'`.** The entire client is one HTML file with
+its script and styles inline, which is deliberate (see `CLAUDE.md`), so the policy has to permit
+it. `default-src 'self'` with no external origin allowed still means an injected script tag or an
+exfiltrating `fetch()` has nowhere off-origin to point, but inline execution itself is not
+blocked. Moving the script to its own file is the change that would let that directive go.
 
 ## What I would consider a vulnerability
 

@@ -1,0 +1,118 @@
+name: Vulnerability scan
+
+# Docker Scout's free tier only covers a handful of repos; this gives the same signal — "a CVE
+# was disclosed against the image people are actually running" — with no cap. Dependabot doesn't
+# cover it: it watches manifests, not the published image, so a CVE in something baked into the
+# base layer (or vendored inside a tool like npm) never shows up there.
+#
+# Two images are scanned, not one, because "the published image has a HIGH CVE" and "this code
+# has a HIGH CVE" are different problems with different fixes:
+#
+#   in both                 -> needs a fix (bump the base image or the dependency)
+#   published only          -> already fixed on main, needs a RELEASE
+#   main only               -> something merged since the last release introduced it
+#
+# A scan of the published image alone can't tell those apart, so after a fix is merged it just
+# goes red every Monday with no way to see that the work is done and only a tag is missing. That
+# is how a weekly scan gets ignored, unpatched CVE or not.
+on:
+  schedule:
+    - cron: '0 8 * * 1'   # Monday morning
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # JSON rather than the table format, and exit-code 0 on both scans: the comparison below
+      # decides what is actually wrong, and it can't do that if the first finding ends the job.
+      - name: Scan the published image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ secrets.DOCKERHUB_USERNAME }}/dadstats:latest
+          severity: HIGH,CRITICAL
+          # Without this, every finding upstream hasn't patched yet is a weekly red X with
+          # nothing actionable behind it.
+          ignore-unfixed: true
+          format: json
+          output: published.json
+          exit-code: '0'
+
+      - name: Build the image from main
+        run: docker build -t dadstats:main .
+
+      - name: Scan the image built from main
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: dadstats:main
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: json
+          output: main.json
+          exit-code: '0'
+
+      # Writes the verdict to the run summary so it's readable without opening logs, and fails
+      # only when there is something to do — which there is in all three cases above, but the
+      # summary says which one, and that's the difference between "cut a release" and "find a fix".
+      - name: Compare and report
+        run: |
+          ids() { jq -r '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | .[]' "$1" | sort -u; }
+          ids published.json > pub.ids
+          ids main.json > main.ids
+          comm -12 pub.ids main.ids > both.ids
+          comm -23 pub.ids main.ids > pub-only.ids
+          comm -13 pub.ids main.ids > main-only.ids
+
+          list() { if [ -s "$1" ]; then sed 's/^/- /' "$1"; else echo "- none"; fi; }
+
+          {
+            echo "## Image scan (HIGH/CRITICAL, fixed upstream only)"
+            echo
+            echo "| Image | Findings |"
+            echo "|---|---|"
+            echo "| published \`:latest\` | $(wc -l < pub.ids) |"
+            echo "| built from \`main\` | $(wc -l < main.ids) |"
+            echo
+            if [ -s both.ids ]; then
+              echo "### Needs a fix — present in both"
+              echo
+              list both.ids
+              echo
+            fi
+            if [ -s pub-only.ids ]; then
+              echo "### Needs a RELEASE — fixed on main, still in the published image"
+              echo
+              list pub-only.ids
+              echo
+              echo "Anyone pulling \`:latest\` still has these. The fix is tagging a release, not more code."
+              echo
+            fi
+            if [ -s main-only.ids ]; then
+              echo "### New on main — introduced since the last release"
+              echo
+              list main-only.ids
+              echo
+            fi
+            if [ ! -s pub.ids ] && [ ! -s main.ids ]; then
+              echo "No fixable HIGH or CRITICAL findings in either image."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -s pub.ids ] || [ -s main.ids ]; then
+            echo "findings present — see the run summary for which image"
+            exit 1
+          fi
+
+      # Keeps the raw scans for a run that found something, so the detail is there without
+      # re-running the scan against a database that has since moved on.
+      - name: Upload the scan output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-scans
+          path: |
+            published.json
+            main.json
+          if-no-files-found: ignore
