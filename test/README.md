@@ -179,7 +179,10 @@ Run it after touching the `TRUST_PROXY` parsing in `server/index.js`, `cookieOpt
 `server/auth.js`, or `server/ratelimit.js`.
 
 **`security-check.js`** — one case per security bug ever found here, plus the boundaries in
-`SECURITY.md`: the session cookie is not `Secure` over plain HTTP unless `SECURE_COOKIES` forces
+`SECURITY.md`: the response headers (no `X-Powered-By`, a CSP that keeps the page on its own
+origin, `nosniff`, and **no** `upgrade-insecure-requests`, which would break every plain-HTTP
+install), that a body over the limit is refused on the routes that need no account while the
+state write still takes megabytes, the session cookie is not `Secure` over plain HTTP unless `SECURE_COOKIES` forces
 it (the flag was once derived from `NODE_ENV`, which silently broke login over plain HTTP) and a
 client-supplied `X-Forwarded-Proto` is ignored while no proxy is trusted, a wrong password is rejected, an
 unknown password does not create an account, `/api/setup` stays closed once configured, a family

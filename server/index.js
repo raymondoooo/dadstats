@@ -13,6 +13,7 @@ const {
 } = require('./admin');
 const { loginLimiter } = require('./ratelimit');
 const { fetchIcsFeed, icsFeedLimiter } = require('./icalProxy');
+const helmet = require('helmet');
 
 // Must happen before any request can hit login/requireAuth, both of which read
 // process.env.JWT_SECRET lazily per-call.
@@ -64,6 +65,57 @@ if (TRUST_PROXY) {
       : (Number.isInteger(hops) && hops >= 0 ? hops : TRUST_PROXY)
   );
 }
+// Response headers. The app answered with `X-Powered-By: Express` and nothing else, which is
+// the wrong way round: it advertised the stack and declined to say anything a browser could use
+// to contain a mistake.
+app.disable('x-powered-by');
+app.use(helmet({
+  // The whole client is one HTML file with its script and styles inline — that's deliberate
+  // (see CLAUDE.md), and it means this first policy has to allow 'unsafe-inline' for both.
+  // What's left is still worth having: with default-src 'self' and no external origins allowed,
+  // an injected <script src> or an exfiltrating fetch() has nowhere to point. Moving the script
+  // into public/app.js is what would let 'unsafe-inline' go, and it's a separate decision.
+  contentSecurityPolicy: {
+    useDefaults: false,
+    directives: {
+      'default-src': ["'self'"],
+      'script-src': ["'self'", "'unsafe-inline'"],
+      'style-src': ["'self'", "'unsafe-inline'"],
+      // Icons and the apple-touch-icon; everything the app renders is same-origin.
+      'img-src': ["'self'"],
+      'font-src': ["'self'"],
+      // Covers the live-update stream and every API call, including the calendar import — which
+      // goes through this server's own proxy precisely so the browser never reaches a third
+      // party (see icalProxy.js). A feed URL pasted by a family is fetched server-side.
+      'connect-src': ["'self'"],
+      'manifest-src': ["'self'"],
+      'object-src': ["'none'"],
+      'base-uri': ["'self'"],
+      'form-action': ["'self'"],
+      'frame-ancestors': ["'none'"],
+      // Deliberately NOT upgrade-insecure-requests: plenty of installs are a plain-HTTP LAN
+      // address, and that directive would rewrite this page's own relative requests to https
+      // and break the app for them. The reverse proxy is the right place to force HTTPS.
+    },
+  },
+  // Applied per-request below instead. Sent unconditionally it would reach plain-HTTP installs,
+  // where it is both meaningless and a trap: a browser that sees it once on a LAN hostname will
+  // refuse to load that hostname over HTTP afterwards.
+  strictTransportSecurity: false,
+  // Would make the page a cross-origin-isolated context, which nothing here needs and which
+  // breaks any future embed.
+  crossOriginEmbedderPolicy: false,
+}));
+
+// HSTS only where it means something: a response to a request that actually arrived over TLS.
+// Needs TRUST_PROXY set when a proxy terminates it, same as the cookie flag. 180 days, and no
+// includeSubDomains — this app has no business making promises about its neighbours.
+const hsts = helmet.strictTransportSecurity({
+  maxAge: 180 * 24 * 60 * 60,
+  includeSubDomains: false,
+});
+app.use((req, res, next) => (req.secure ? hsts(req, res, next) : next()));
+
 // Two body limits, because exactly one route needs a big one.
 //
 // The client PUTs its entire state on every save, so that ceiling grows with a family's whole

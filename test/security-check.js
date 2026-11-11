@@ -20,7 +20,12 @@ async function req(method, path, { body, cookie, headers } = {}) {
   });
   let parsed = {};
   try { parsed = JSON.parse(await res.text()); } catch { /* not JSON */ }
-  return { status: res.status, body: parsed, setCookie: res.headers.get('set-cookie') };
+  return {
+    status: res.status,
+    body: parsed,
+    setCookie: res.headers.get('set-cookie'),
+    header: (name) => res.headers.get(name),
+  };
 }
 
 const fails = [];
@@ -67,6 +72,42 @@ const check = (label, ok, detail) => {
             : 'X-Forwarded-Proto is ignored when no proxy is trusted',
     spoofSecure === (forced || trusted),
     `cookie: ${spoofedProto.setCookie}`
+  );
+
+  console.log('== response headers ==');
+
+  // The app used to answer with X-Powered-By and nothing else: it named the stack and offered
+  // the browser nothing to contain a mistake with.
+  const page = await req('GET', '/');
+  check('no X-Powered-By', !page.header('x-powered-by'), 'got ' + page.header('x-powered-by'));
+
+  const csp = page.header('content-security-policy') || '';
+  check('a Content-Security-Policy is sent', csp.length > 0);
+  // The parts that still bite with 'unsafe-inline' in play: injected script and exfiltration
+  // have nowhere off-origin to point, the page can't be framed, and <base> can't be rewritten.
+  for (const directive of [
+    "default-src 'self'", "object-src 'none'", "base-uri 'self'",
+    "frame-ancestors 'none'", "form-action 'self'", "connect-src 'self'",
+  ]) {
+    check(`CSP includes ${directive}`, csp.includes(directive), 'policy: ' + csp);
+  }
+  // Would break every install served over plain HTTP: it rewrites this page's own relative
+  // requests to https.
+  check('CSP does not force upgrade-insecure-requests',
+    !csp.includes('upgrade-insecure-requests'), 'policy: ' + csp);
+  check('nosniff is set', page.header('x-content-type-options') === 'nosniff');
+
+  // HSTS on a plain-HTTP response is a trap, not a protection: a browser that sees it once on a
+  // LAN hostname refuses to load that hostname over HTTP afterwards. This instance trusts no
+  // proxy, so a client-supplied X-Forwarded-Proto must not conjure one either.
+  check('no HSTS over plain HTTP', !page.header('strict-transport-security'),
+    'got ' + page.header('strict-transport-security'));
+  const spoofedPage = await req('GET', '/', { headers: { 'X-Forwarded-Proto': 'https' } });
+  check(
+    trusted ? 'HSTS is sent for an HTTPS request via a trusted proxy'
+            : 'a forged X-Forwarded-Proto does not produce HSTS',
+    !!spoofedPage.header('strict-transport-security') === trusted,
+    'got ' + spoofedPage.header('strict-transport-security')
   );
 
   console.log('== auth boundaries ==');

@@ -534,6 +534,14 @@ everywhere, which is right only when there is no plain-HTTP way in at all.
 `schema.sql` is applied on boot and is idempotent, so it converges both a fresh volume and an
 in-place upgrade without a separate migration step.
 
+Responses carry the usual browser-side headers (via [helmet](https://helmetjs.github.io/)),
+including a Content-Security-Policy that keeps the page to its own origin — an injected script
+tag or an exfiltrating `fetch()` has nowhere to point. The policy still has to allow
+`'unsafe-inline'` for scripts and styles, because the whole client is one HTML file with both
+inline; that's deliberate, and it's the one thing a stricter policy would need changed.
+`Strict-Transport-Security` is sent only on responses to requests that actually arrived over
+HTTPS, so a plain-HTTP LAN install never gets pinned to a protocol it doesn't serve.
+
 `GET /api/health` reports DB connectivity, and the image ships a Docker `HEALTHCHECK` that uses it.
 
 **Runs as the unprivileged `node` user.** The container starts as root only long enough to fix

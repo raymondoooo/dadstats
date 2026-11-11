@@ -62,6 +62,18 @@ async function burnLimiter(xff) {
     forwarded.status === 200 && /;\s*Secure/i.test(forwarded.setCookie || ''),
     `status ${forwarded.status}, cookie ${forwarded.setCookie}`);
 
+  // --- HSTS follows the same rule as the cookie: only for a request that arrived over TLS ---
+  const plainPage = await fetch(URL + '/');
+  check('no HSTS on a plain-HTTP request', !plainPage.headers.get('strict-transport-security'),
+    'got ' + plainPage.headers.get('strict-transport-security'));
+
+  const httpsPage = await fetch(URL + '/', { headers: { 'X-Forwarded-Proto': 'https' } });
+  const sts = httpsPage.headers.get('strict-transport-security') || '';
+  check('HSTS is sent for an HTTPS request through the trusted proxy', sts.includes('max-age='),
+    'got ' + JSON.stringify(sts));
+  // A self-hosted app has no business making promises about its neighbours on other subdomains.
+  check('HSTS does not claim subdomains', !/includeSubDomains/i.test(sts), 'got ' + sts);
+
   // --- Which bucket a forged header lands in ---
   if (PHASE === 'two') {
     // Two hops: the app's own proxy wrote the right-hand entry, so the client address is the
