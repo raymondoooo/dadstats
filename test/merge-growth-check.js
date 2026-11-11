@@ -74,17 +74,17 @@ NEEDED.forEach((n) => {
 });
 
 // --- The exact shape that caused the production bug: a live profile and a tombstone that share
-// --- a name but have different ids ("deleted Hayden, made a new Hayden").
+// --- a name but have different ids ("deleted Jordan, made a new Jordan").
 function baseState() {
   return {
     nav: { screen: 'home', profileId: null },
     profiles: [
-      { id: 'dead-1', name: 'Hayden', removed: true, activeSeasonId: null,
+      { id: 'dead-1', name: 'Jordan', removed: true, activeSeasonId: null,
         seasons: [{ id: 's-dead', name: 'Season 1', sport: 'basketball', removed: true, games: [] }] },
-      { id: 'live-1', name: 'Hayden', removed: false, activeSeasonId: 's-live',
+      { id: 'live-1', name: 'Jordan', removed: false, activeSeasonId: 's-live',
         seasons: [{ id: 's-live', name: '2026 - Premier', sport: 'soccer', removed: false, games: [] }] },
-      { id: 'live-2', name: 'Abbie', removed: false, activeSeasonId: 's-abbie',
-        seasons: [{ id: 's-abbie', name: '2026 - JV', sport: 'basketball', removed: false, games: [] }] },
+      { id: 'live-2', name: 'Casey', removed: false, activeSeasonId: 's-casey',
+        seasons: [{ id: 's-casey', name: '2026 - JV', sport: 'basketball', removed: false, games: [] }] },
     ],
   };
 }
@@ -109,7 +109,7 @@ check('settles at 3 entries', local.profiles.length === 3, 'got ' + local.profil
 
 // The behaviour the tombstone rules exist for must still hold.
 const live = sandbox.activeProfiles(local).map((p) => p.name).sort();
-check('both live profiles survive', JSON.stringify(live) === JSON.stringify(['Abbie', 'Hayden']),
+check('both live profiles survive', JSON.stringify(live) === JSON.stringify(['Casey', 'Jordan']),
   JSON.stringify(live));
 const deadStillDead = local.profiles.filter((p) => p.id === 'dead-1').every((p) => p.removed);
 check('the tombstone stays a tombstone', deadStillDead);
